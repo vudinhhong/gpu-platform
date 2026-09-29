@@ -1,0 +1,34 @@
+# GPU override, merged by deploy.sh ONLY when the host has a working
+# NVIDIA setup (nvidia-smi + nvidia container runtime). Usage:
+#
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.gpu.yml up -d
+#
+# Gives the backend container access to GPUs 0 and 1 so the GPU monitor and
+# the per-user device-ACL code can see the real hardware.
+services:
+  backend:
+    # The driver only reports compute processes it can see in the caller's PID
+    # namespace, so from its own namespace the backend's nvidia-smi lists
+    # nothing at all: every card looked busy with no way to say by whom, and
+    # work started over SSH rather than through a workspace was invisible.
+    #
+    # Sharing the host namespace is what makes the GPU monitor able to name a
+    # process, read its command line from /proc and signal it.  It is also real
+    # reach: the backend can see every process on this machine.  What it may
+    # STOP is narrowed in code, only a process it can attribute to a platform
+    # user, because the namespace cannot express that distinction.
+    pid: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # The device NODES are added by deploy.sh in a generated override, because
+    # which ones exist is a property of the host.  They matter: the NVIDIA hook
+    # grants access to them behind the daemon's back, so systemd never learns
+    # about them, and the first `systemctl daemon-reload` revokes the GPU from
+    # this container while the host carries on as normal.  Named in the spec,
+    # they survive a reload.

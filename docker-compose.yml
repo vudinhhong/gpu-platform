@@ -1,0 +1,157 @@
+# GPU Platform, base stack.
+#
+# HTTP entry point is configurable (HTTP_MODE in .env):
+#
+#   HTTP_MODE=host   → no edge container.  The frontend container publishes
+#                      ${WEB_BIND}:${WEB_PORT} and an nginx/Caddy already
+#                      running on the host proxies to it.  Use this when the
+#                      machine already serves other sites on :80/:443.
+#                      Compose files:  -f docker-compose.yml -f docker-compose.host.yml
+#
+#   HTTP_MODE=edge   → the bundled `nginx` service owns :80/:443 (profile "edge").
+#                      Use this on a dedicated box with nothing else on those ports.
+#                      Compose files:  -f docker-compose.yml --profile edge
+#
+# deploy.sh selects the right combination automatically.
+
+services:
+  backend:
+    build: ./backend
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - DATABASE_URL=sqlite:///./data/gpu_platform.db
+      - JUPYTER_DATA_DIR=/jupyter_data
+      # Host-side path of ./jupyter_data, bind mounts for user containers are
+      # resolved by the Docker daemon against the HOST filesystem.
+      - JUPYTER_DATA_HOST_DIR=${JUPYTER_DATA_HOST_DIR:-}
+      - HOME_MOUNT_ROOT=${HOME_MOUNT_ROOT:-/home}
+      - GPU_COUNT=${GPU_COUNT:-2}
+      - ALLOW_MOCK_GPU=${ALLOW_MOCK_GPU:-false}
+      - SESSION_BACKEND=${SESSION_BACKEND:-container}
+      - JUPYTER_IMAGE=${JUPYTER_IMAGE:-gpu-jupyter:latest}
+      - JUPYTER_IMAGES=${JUPYTER_IMAGES:-}
+      - DOCKER_NETWORK=${DOCKER_NETWORK:-workspace-gpu_gpu-net}
+      - DEFAULT_MEMORY_LIMIT_MB=${DEFAULT_MEMORY_LIMIT_MB:-8192}
+      - DEFAULT_CPU_LIMIT_SECONDS=${DEFAULT_CPU_LIMIT_SECONDS:-0}
+      - DEFAULT_CPU_CORES=${DEFAULT_CPU_CORES:-2}
+      - CONTAINER_PIDS_LIMIT=${CONTAINER_PIDS_LIMIT:-512}
+      - CONTAINER_SHM_SIZE_MB=${CONTAINER_SHM_SIZE_MB:-2048}
+      # ── Security ──────────────────────────────────────────────────────
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      - MIN_PASSWORD_LENGTH=${MIN_PASSWORD_LENGTH:-10}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      # One password per user: Jupyter and the container's UNIX account both
+      # accept the platform account password (derived, never stored in clear).
+      - UNIFIED_PASSWORD=${UNIFIED_PASSWORD:-true}
+      - SSH_PASSWORD_AUTH=${SSH_PASSWORD_AUTH:-true}
+      - LOGIN_MAX_FAILURES=${LOGIN_MAX_FAILURES:-8}
+      - LOGIN_LOCKOUT_SECONDS=${LOGIN_LOCKOUT_SECONDS:-900}
+      # ── Quotas & lifecycle ────────────────────────────────────────────
+      - DEFAULT_DISK_QUOTA_MB=${DEFAULT_DISK_QUOTA_MB:-0}
+      - DISK_QUOTA_ACTION=${DISK_QUOTA_ACTION:-warn}
+      - DEFAULT_GPU_HOURS_QUOTA=${DEFAULT_GPU_HOURS_QUOTA:-0}
+      - DEFAULT_CPU_HOURS_QUOTA=${DEFAULT_CPU_HOURS_QUOTA:-0}
+      - QUOTA_PERIOD=${QUOTA_PERIOD:-week}
+      - QUOTA_TZ_OFFSET_HOURS=${QUOTA_TZ_OFFSET_HOURS:-0}
+      - JOB_TIME_QUOTA_ACTION=${JOB_TIME_QUOTA_ACTION:-requeue}
+      - JOB_TIME_QUOTA_CPU_ACTION=${JOB_TIME_QUOTA_CPU_ACTION:-pause}
+      - QUOTA_REFRESH_INTERVAL_SECONDS=${QUOTA_REFRESH_INTERVAL_SECONDS:-60}
+      # ── Batch job queue ───────────────────────────────────────────────
+      - JOBS_ENABLED=${JOBS_ENABLED:-true}
+      - JOB_SCHEDULER_INTERVAL=${JOB_SCHEDULER_INTERVAL:-10}
+      - JOB_MAX_RUNNING_PER_USER=${JOB_MAX_RUNNING_PER_USER:-2}
+      - JOB_MAX_QUEUED_PER_USER=${JOB_MAX_QUEUED_PER_USER:-50}
+      - JOB_GPU_HEADROOM_MB=${JOB_GPU_HEADROOM_MB:-512}
+      - JOB_MAX_RUNTIME_MINUTES=${JOB_MAX_RUNTIME_MINUTES:-0}
+      - JOB_GPU_POOL=${JOB_GPU_POOL:-}
+      - JOB_OUTPUT_TAIL_LINES=${JOB_OUTPUT_TAIL_LINES:-500}
+      - JOB_OUTPUT_TAIL_BYTES=${JOB_OUTPUT_TAIL_BYTES:-131072}
+      - JOB_OUTPUT_MAX_LINE_CHARS=${JOB_OUTPUT_MAX_LINE_CHARS:-1000}
+      - JOB_GPU_OVERRUN_FACTOR=${JOB_GPU_OVERRUN_FACTOR:-1.1}
+      - JOB_GPU_OVERRUN_GRACE_MB=${JOB_GPU_OVERRUN_GRACE_MB:-1024}
+      - JOB_GPU_OVERRUN_ACTION=${JOB_GPU_OVERRUN_ACTION:-stop}
+      - JOB_OUTPUT_WARN_MB=${JOB_OUTPUT_WARN_MB:-512}
+      - JOB_MAX_OUTPUT_MB=${JOB_MAX_OUTPUT_MB:-0}
+      - JOB_CPU_POOL_CORES=${JOB_CPU_POOL_CORES:-0}
+      - JOB_CPU_RESERVED_CORES=${JOB_CPU_RESERVED_CORES:-4}
+      - FAIRSHARE_WINDOW_HOURS=${FAIRSHARE_WINDOW_HOURS:-24}
+      - FAIRSHARE_HALFLIFE_HOURS=${FAIRSHARE_HALFLIFE_HOURS:-6}
+      - FAIRSHARE_CPU_CORE_WEIGHT=${FAIRSHARE_CPU_CORE_WEIGHT:-0.125}
+      - FAIRSHARE_LOOKAHEAD_SECONDS=${FAIRSHARE_LOOKAHEAD_SECONDS:-600}
+      - IDLE_TIMEOUT_MINUTES=${IDLE_TIMEOUT_MINUTES:-0}
+      - REAPER_INTERVAL_SECONDS=${REAPER_INTERVAL_SECONDS:-300}
+      - METRICS_INTERVAL_SECONDS=${METRICS_INTERVAL_SECONDS:-10}
+      - KEEP_SESSIONS_ON_SHUTDOWN=${KEEP_SESSIONS_ON_SHUTDOWN:-true}
+      - GPU_KEEPER_INTERVAL=${GPU_KEEPER_INTERVAL:-120}
+      - SELF_HEAL_INTERVAL=${SELF_HEAL_INTERVAL:-30}
+      # ── SSH access to per-user containers ─────────────────────────────
+      - SSH_ENABLED=${SSH_ENABLED:-true}
+      - SSH_PORT_START=${SSH_PORT_START:-2222}
+      - SSH_PORT_END=${SSH_PORT_END:-2321}
+      # ── Disk I/O throttling for user containers ───────────────────────
+      - DISK_READ_BPS_MB=${DISK_READ_BPS_MB:-150}
+      - DISK_WRITE_BPS_MB=${DISK_WRITE_BPS_MB:-80}
+      - DISK_READ_IOPS=${DISK_READ_IOPS:-0}
+      - DISK_WRITE_IOPS=${DISK_WRITE_IOPS:-0}
+      - BLKIO_WEIGHT=${BLKIO_WEIGHT:-500}
+    volumes:
+      - ./data:/app/data
+      - ./jupyter_data:/jupyter_data
+      # Backend needs the Docker socket to create per-user containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    # GPU device access for the backend (GPU monitor + ACL mode) is added by
+    # docker-compose.gpu.yml, merged by deploy.sh only on hosts with a working
+    # NVIDIA setup.
+    ports:
+      # Loopback by default: the API is reached through the web tier, not
+      # directly from the network.  Set BACKEND_BIND=0.0.0.0 to expose it.
+      - "${BACKEND_BIND:-127.0.0.1}:8000:8000"
+    restart: unless-stopped
+    networks:
+      - gpu-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    networks:
+      - gpu-net
+    # In HTTP_MODE=host this container is the public entry point; the port
+    # publish lives in docker-compose.host.yml so edge mode stays port-free.
+
+  nginx:
+    image: nginx:alpine
+    # Only started with `--profile edge`; on hosts that already run a web
+    # server this container would fight for :80/:443.
+    profiles: ["edge"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+    networks:
+      - gpu-net
+
+networks:
+  gpu-net:
+    driver: bridge
+    name: workspace-gpu_gpu-net
+    driver_opts:
+      # Pin the bridge interface name.  Docker otherwise derives it from the
+      # network ID (br-<hash>), which changes every time the network is
+      # recreated, and any host firewall rule naming that interface silently
+      # stops matching.  On a host with a default-DROP OUTPUT policy that
+      # shows up as a 504 from the reverse proxy, because docker-proxy can no
+      # longer reach the container.  See scripts/host_firewall_setup.sh.
+      com.docker.network.bridge.name: gpu-platform0

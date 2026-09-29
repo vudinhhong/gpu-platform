@@ -1,0 +1,5 @@
+# Test-only dependencies (the runtime image does not need these).
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   python -m pytest test_api.py -v
+-r requirements.txt
+pytest==8.2.2

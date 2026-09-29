@@ -1,0 +1,84 @@
+#!/bin/sh
+# df, with the workspace shown at its allocated size.
+#
+# IMPORTANT: this output is parsed by scripts.  A friendly view is only
+# substituted for the plain interactive forms (`df`, `df -h`, `df /path`);
+# anything else is handed straight to the real df untouched, in the exact units
+# it was asked for.  Rewriting `df -Pk` output into "195.1G" broke installers
+# that do arithmetic on it, the Miniconda installer among them.
+for arg in "$@"; do
+    case "$arg" in
+        -h|-H|--human-readable|--si|--) ;;   # still a person looking
+        -*) exec /usr/bin/df "$@" ;;         # a script: do not touch anything
+    esac
+done
+
+HUMAN=0
+for arg in "$@"; do
+    case "$arg" in -h|-H|--human-readable|--si) HUMAN=1 ;; esac
+done
+
+[ -r /platform/limits.env ] && . /platform/limits.env
+[ -r /workspace/.platform/limits.env ] && . /workspace/.platform/limits.env
+QUOTA_MB="${PLATFORM_DISK_QUOTA_MB:-0}"
+# Where this workspace is mounted; the old fixed path is the last resort for a
+# container created before workspaces moved to their home path.
+WS="${PLATFORM_HOME:-${HOME:-/workspace}}"
+
+if [ "$QUOTA_MB" != "0" ]; then
+    used_mb=$(( $(du -sk "$WS" 2>/dev/null | awk '{print $1}') / 1024 ))
+    avail_mb=$(( QUOTA_MB - used_mb ))
+    [ "$avail_mb" -lt 0 ] && avail_mb=0
+    pct=$(awk -v u="$used_mb" -v q="$QUOTA_MB" 'BEGIN{printf "%d", u/q*100}')
+    size_mb="$QUOTA_MB"
+else
+    # No quota set: report what the workspace actually sits on, but still
+    # report it.  df hides a mount whose device is already listed under
+    # another mount point, so without this the workspace line, which is the
+    # only one anybody here cares about, can be missing entirely.
+    # Parsed without `set --`, which would replace this script's own
+    # arguments and hand them to the real df further down.
+    ws_line=$(/usr/bin/df -Pk "$WS" 2>/dev/null | tail -1)
+    size_mb=$(( $(echo "$ws_line" | awk '{print $2+0}') / 1024 ))
+    used_mb=$(( $(echo "$ws_line" | awk '{print $3+0}') / 1024 ))
+    avail_mb=$(( $(echo "$ws_line" | awk '{print $4+0}') / 1024 ))
+    pct=$(echo "$ws_line" | awk '{gsub(/%/,"",$5); print $5+0}')
+fi
+
+/usr/bin/df "$@" 2>/dev/null | awk \
+    -v quota="$QUOTA_MB" -v human="$HUMAN" -v ws="$WS" \
+    -v q_mb="${size_mb:-0}" -v u_mb="${used_mb:-0}" -v a_mb="${avail_mb:-0}" \
+    -v pct="${pct:-0}" '
+    function unit(mb) {
+        # Match the units the caller is already seeing: human when they asked
+        # for it, otherwise 1K blocks, which is what df prints by default.
+        if (!human) return sprintf("%d", mb * 1024)
+        if (mb >= 1048576) return sprintf("%.1fT", mb / 1048576)
+        if (mb >= 1024)    return sprintf("%.1fG", mb / 1024)
+        if (mb == 0)       return "0"
+        return sprintf("%dM", mb)
+    }
+    NR == 1 { print; next }
+    # Internal pseudo-filesystems: runtime noise, not storage anyone can use.
+    # /dev/shm is the exception: it is real shared memory that programs run
+    # out of, and hiding it turns "my DataLoader workers died" into a mystery.
+    $NF == "/dev/shm" { print; next }
+    $NF ~ /^\/(proc|sys|dev)(\/|$)/ { next }
+    $1 == "tmpfs" && $NF !~ /^\/(tmp|run)/ && $NF != ws { next }
+    # The platform keeps its own bookkeeping beside the workspace.  It is not
+    # storage anyone here can use, and listing it only raises a question.
+    # (No apostrophes in this block: the awk program is single-quoted.)
+    $NF == "/platform" { next }
+    $NF == ws {
+        shown = 1
+        printf "%-15s %9s %9s %9s %3s%% %s\n", "workspace",
+               unit(q_mb), unit(u_mb), unit(a_mb), pct, ws
+        next
+    }
+    { print }
+    END {
+        if (!shown)
+            printf "%-15s %9s %9s %9s %3s%% %s\n", "workspace",
+                   unit(q_mb), unit(u_mb), unit(a_mb), pct, ws
+    }
+'

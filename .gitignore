@@ -1,0 +1,26 @@
+# Secrets & runtime state
+.env
+data/
+jupyter_data/
+backend/data/
+nginx/ssl/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+dist/
+
+# DB
+*.db
+*.db-shm
+*.db-wal
+
+# Editor / misc
+.freebuff/
+*.bak
+docker-compose.gpu.devices.yml

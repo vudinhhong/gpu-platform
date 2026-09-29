@@ -1,0 +1,7 @@
+# `COPY . .` runs AFTER `npm ci` in the Dockerfile, so without this the host's
+# node_modules is copied over the freshly installed one — and a host install
+# from a different platform/arch breaks the build with missing native bindings.
+node_modules
+dist
+.vite
+npm-debug.log*

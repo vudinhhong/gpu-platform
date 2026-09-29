@@ -1,0 +1,108 @@
+#!/usr/bin/python3
+"""submit: queue a script to run on a GPU.
+
+The script runs with your files, your environment and your resource limits.
+It starts as soon as a GPU has room for what you asked for; until then it
+waits in the queue, and `queue` shows where it is.
+"""
+
+import argparse
+import os
+import sys
+
+sys.path.insert(0, "/usr/local/lib/gpu-platform")
+from _jobclient import call, cwd_relative, die, paint, relative_to_workspace  # noqa: E402
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="submit",
+        description="Queue a shell script to run on a GPU.",
+        epilog="examples:\n"
+               "  submit prepare.sh                          # no GPU\n"
+               "  submit train.sh --gpu-memory 20000         # one GPU, 20 GB\n"
+               "  submit train.sh --gpu-memory 20000 --gpus 2\n"
+               "  submit train.sh --gpu-memory 20000 --max-minutes 600\n"
+               "\n--gpu-memory decides whether the job gets a GPU at all. Give a\n"
+               "figure and the job is queued for a card with that much free, and\n"
+               "is stopped if it goes on to hold much more. The scheduler puts\n"
+               "other work beside it on that number, so it has to be true. Give\n"
+               "none and the job runs on CPU, starting as soon as cores are free.\n"
+               "\nOutput is written to output.<job id>.out next to where you "
+               "submitted from.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("script", help="shell script to run")
+    parser.add_argument("--name", help="a label to recognise it by (default: the file name)")
+    parser.add_argument("--gpu-memory", type=int, metavar="MB",
+                        help="GPU memory the job needs, per GPU. Required for a GPU "
+                             "job; without it the job runs on CPU")
+    parser.add_argument("--gpus", type=int, metavar="N",
+                        help="how many GPUs to run on (default: 1); needs --gpu-memory")
+    parser.add_argument("--no-gpu", action="store_true",
+                        help="run without a GPU; this is the default, kept for saying so plainly")
+    parser.add_argument("--max-minutes", type=int, metavar="N",
+                        help="stop the job if it is still running after N minutes")
+    args = parser.parse_args()
+
+    # Caught here rather than server-side only, so the answer is immediate and
+    # names both flags the user typed.
+    if args.no_gpu and args.gpu_memory:
+        die("--no-gpu and --gpu-memory contradict each other, drop one of them")
+    if args.no_gpu and args.gpus:
+        die("--no-gpu and --gpus contradict each other, drop one of them")
+    if args.gpus is not None and not args.gpu_memory:
+        die("--gpus needs --gpu-memory: say how much VRAM the job needs, "
+            "e.g. --gpus 2 --gpu-memory 20000")
+
+    if not os.path.isfile(args.script):
+        die(f"no such file: {args.script}")
+
+    # None means "not mentioned", which the platform reads as a CPU job; 0
+    # means --no-gpu, which is the same thing said out loud.  They are sent
+    # apart so that --no-gpu with a memory figure is refused rather than
+    # silently resolved one way or the other.
+    if args.no_gpu:
+        gpu_count = 0
+    elif args.gpu_memory:
+        gpu_count = args.gpus if args.gpus is not None else 1
+    else:
+        gpu_count = None
+
+    job = call("POST", "/api/jobs", {
+        "script": relative_to_workspace(args.script),
+        "workdir": cwd_relative(),
+        "name": args.name,
+        "gpu_count": gpu_count,
+        "gpu_memory_mb": args.gpu_memory,
+        "max_runtime_minutes": args.max_minutes,
+    })
+
+    print(f"job {job['id']} submitted  [{paint(job['status'])}]")
+    if job.get("queue_position"):
+        print(f"  position in queue : {job['queue_position']}")
+    if job["gpu_count"]:
+        print(f"  asking for        : {job['gpu_count']} GPU x {job['gpu_memory_mb']} MB")
+    else:
+        print("  asking for        : no GPU (CPU only)")
+    if job.get("max_runtime_minutes"):
+        print(f"  stops after       : {job['max_runtime_minutes']} minutes")
+    print(f"  output            : {job['output']}")
+    print(f"\nWatch it with:  myjobs        Follow output with:  tail -f {job['output']}")
+    if job["gpu_count"]:
+        print("See what is ahead of it:  queue")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except BrokenPipeError:
+        # Piping into head/less closes the pipe early; that is not an error.
+        # Close stdout explicitly so Python does not report it again at exit.
+        try:
+            sys.stdout.close()
+        except Exception:
+            pass
+        sys.exit(0)
+    except KeyboardInterrupt:
+        sys.exit(130)

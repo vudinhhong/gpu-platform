@@ -1,0 +1,172 @@
+#!/usr/bin/python3
+"""queue: the shared job queue, and the detail of one of your own jobs."""
+
+import argparse
+import sys
+
+sys.path.insert(0, "/usr/local/lib/gpu-platform")
+from _jobclient import call, duration, paint  # noqa: E402
+
+
+def show_one(job_id):
+    """One of your own jobs, in as much detail as its state has to give."""
+    job = call("GET", f"/api/jobs/{job_id}")
+    status = job["status"]
+
+    print(f"job {job['id']}  {job['name'] or ''}")
+    print(f"  status     : {paint(status)}"
+          + (f"  (exit {job['exit_code']})" if job.get("exit_code") is not None else ""))
+
+    if status == "queued":
+        # A waiting job has no runtime, no output and no GPUs yet.  What it
+        # does have is a place in line and a reason for being in it, which is
+        # the only thing anybody opens this for.
+        if job.get("queue_position"):
+            print(f"  position   : {job['queue_position']} in the queue")
+        print(f"  waiting    : {duration(job.get('waited_seconds'))}")
+        reason = job.get("blocked_reason")
+        note = job.get("message")
+        # A job the scheduler put back in the queue carries the same reason
+        # with what happens next attached, so that fuller sentence is the one
+        # worth printing rather than both halves on two lines.
+        if note and reason and note.startswith(reason):
+            reason = note
+            note = None
+        print(f"  why        : {reason if reason else 'nothing is holding it up; it starts on the next pass'}")
+        if note:
+            print(f"  note       : {note}")
+        print(f"  asking for : " + (
+            f"{job['gpu_count']} GPU x {job['gpu_memory_mb']} MB"
+            if job["gpu_count"] else "no GPU (CPU only)"))
+        if job.get("max_runtime_minutes"):
+            print(f"  time limit : {job['max_runtime_minutes']} minutes")
+        print(f"  script     : {job['script']}")
+        print(f"\nIt will start on its own. `cancel {job['id']}` takes it out of the queue.")
+        return
+
+    if job.get("message"):
+        print(f"  note       : {job['message']}")
+    if job.get("gpus"):
+        print(f"  gpus       : {', '.join(str(g) for g in job['gpus'])}"
+              f"  ({job['gpu_memory_mb']} MB requested)")
+    if job.get("gpu_memory_used_mb") is not None and job.get("gpu_memory_mb"):
+        # Measured against what was asked for, the figure the user chose and
+        # would change.  The allowance is the platform's tolerance on top of
+        # it, so it gets its own line rather than becoming the denominator.
+        used, asked = job["gpu_memory_used_mb"], job["gpu_memory_mb"]
+        print(f"  gpu memory : {used} MB held of the {asked} MB asked for "
+              f"({used * 100 // asked}%)")
+    if job.get("gpu_memory_allowance_mb") and job.get("gpu_memory_enforced"):
+        # Being stopped by a threshold nobody showed you is unfair.
+        print(f"  stopped at : {job['gpu_memory_allowance_mb']} MB held")
+    if job.get("max_runtime_minutes"):
+        print(f"  time limit : {job['max_runtime_minutes']} minutes")
+    if job.get("waited_seconds"):
+        print(f"  waited     : {duration(job['waited_seconds'])} before starting")
+    print(f"  script     : {job['script']}")
+    print(f"  output     : {job['output']}")
+    print(f"  runtime    : {duration(job.get('runtime_seconds'))}")
+
+    tail = job.get("output_tail")
+    if tail:
+        shown = min(len(tail.splitlines()), 40)
+        print(f"\n  --- last {shown} lines " + "-" * 38)
+        for line in tail.splitlines()[-40:]:
+            print("  " + line)
+        if job.get("output_truncated"):
+            size = job.get("output_size_bytes") or 0
+            human = (f"{size / 1048576:.1f} MB" if size >= 1048576
+                     else f"{size / 1024:.0f} KB" if size >= 1024 else f"{size} B")
+            print(f"\n  Output is {human} in total. For all of it:")
+            print(f"    tail -f {job['output']}")
+
+
+def show_queue(mine_only):
+    """The whole queue: everyone's running and waiting work."""
+    data = call("GET", "/api/jobs/queue")
+
+    gpus = data.get("gpus") or []
+    if gpus:
+        print("GPUs")
+        for g in gpus:
+            print(f"  GPU {g['index']}  {g['free_mb']:>6} MB free of {g['total_mb']} MB"
+                  f"   {g['running_jobs']} running")
+    cpu = data.get("cpu") or {}
+    if cpu.get("total_cores"):
+        print(f"  CPU     {cpu['free_cores']:>6g} of {cpu['total_cores']:g} cores free")
+    print()
+
+    rows = data.get("queue") or []
+    if mine_only:
+        # Filtered here rather than server-side: the point of this view is the
+        # whole queue, and -m is only a convenience for picking your own rows
+        # out of it.  The name comes from the platform, not from $USER.
+        rows = [r for r in rows if r["username"] == data.get("you")]
+
+    if not rows:
+        print("The queue is empty. A job submitted now starts immediately.")
+        print("Submit one with:  submit <script.sh> --gpu-memory <MB>")
+        return
+
+    running = sum(1 for r in rows if r["status"] in ("running", "starting"))
+    waiting = len(rows) - running
+
+    print(f"{'ID':>5}  {'STATUS':<10} {'GPU':<9} {'RUNTIME':>9} "
+          f"{'WAITED':>9}  {'USER':<12} NAME")
+    for job in rows:
+        gpu = ",".join(str(g) for g in job["gpus"]) if job["gpus"] else (
+            f"{job['gpu_count']}x{job['gpu_memory_mb']}M" if job["gpu_count"] else "cpu")
+        runtime = duration(job["runtime_seconds"]) if job["runtime_seconds"] is not None else "-"
+        # Padded before it is coloured: `paint` adds escape codes in a
+        # terminal and none when the output is piped, so padding the coloured
+        # string would line the columns up in exactly one of those two cases.
+        status_cell = paint(f"{job['status']:<10}")
+        name = (job["name"] or "")[:24]
+        print(f"{job['id']:>5}  {status_cell} {gpu:<9} {runtime:>9} "
+              f"{duration(job['waited_seconds']):>9}  "
+              f"{job['username'][:12]:<12} {name}")
+
+    print(f"\n{running} running, {waiting} waiting.")
+    print("`queue <id>` for one of your own jobs.  `submit` to add one.")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="queue",
+        description="Show the shared job queue, or one of your own jobs in detail.",
+        epilog="examples:\n"
+               "  queue              everyone's running and waiting jobs\n"
+               "  queue -m           only your own rows of it\n"
+               "  queue 12           one of your jobs in detail\n"
+               "\nThe queue is shared, so it shows every user's work: that is what\n"
+               "tells you whether a job submitted now would start or wait. Only the\n"
+               "public columns are listed, never anyone's scripts or output.\n"
+               "\nFor your own jobs alone, finished ones included, use `myjobs`.\n"
+               "Submit with `submit`, stop one with `cancel`.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("-m", "--mine", action="store_true",
+                        help="show only your own rows of the queue")
+    parser.add_argument("job_id", nargs="?", type=int,
+                        help="one of your own jobs, in detail")
+    args = parser.parse_args()
+
+    if args.job_id is not None:
+        show_one(args.job_id)
+    else:
+        show_queue(args.mine)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except BrokenPipeError:
+        # Piping into head/less closes the pipe early; that is not an error.
+        # Close stdout explicitly so Python does not report it again at exit.
+        try:
+            sys.stdout.close()
+        except Exception:
+            pass
+        sys.exit(0)
+    except KeyboardInterrupt:
+        sys.exit(130)

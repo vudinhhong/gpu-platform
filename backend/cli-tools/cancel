@@ -1,0 +1,42 @@
+#!/usr/bin/python3
+"""cancel: stop one or more of your jobs."""
+
+import argparse
+import sys
+
+sys.path.insert(0, "/usr/local/lib/gpu-platform")
+from _jobclient import call, die  # noqa: E402
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="cancel",
+        description="Cancel jobs by id.",
+        epilog="examples:\n  cancel 12\n  cancel 12 13 14",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("ids", nargs="+", type=int, help="job id(s) to cancel")
+    args = parser.parse_args()
+
+    result = call("POST", "/api/jobs/cancel", {"ids": args.ids})
+    for job_id in result.get("cancelled", []):
+        print(f"job {job_id} cancelled")
+    for skipped in result.get("skipped", []):
+        print(f"job {skipped['id']} not cancelled: {skipped['reason']}", file=sys.stderr)
+    if not result.get("cancelled"):
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except BrokenPipeError:
+        # Piping into head/less closes the pipe early; that is not an error.
+        # Close stdout explicitly so Python does not report it again at exit.
+        try:
+            sys.stdout.close()
+        except Exception:
+            pass
+        sys.exit(0)
+    except KeyboardInterrupt:
+        sys.exit(130)

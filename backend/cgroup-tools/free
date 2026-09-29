@@ -1,0 +1,40 @@
+#!/bin/sh
+# free for this workspace.
+#
+# /proc/meminfo reports the whole machine's memory, which is not the memory
+# this workspace may use.  This reports the allocation.  /usr/bin/free still
+# gives the raw view.
+# Same rule as df: only the plain forms get the workspace view.  Options this
+# wrapper does not reproduce exactly (-s, -t, -w, --json ...) go to the real
+# free, because something may be parsing them.
+for arg in "$@"; do
+    case "$arg" in
+        -b|-k|-m|-g|-h|--bytes|--kibi|--mebi|--gibi|--human) ;;
+        *) exec /usr/bin/free "$@" ;;
+    esac
+done
+
+max=$(cat /sys/fs/cgroup/memory.max 2>/dev/null)
+cur=$(cat /sys/fs/cgroup/memory.current 2>/dev/null)
+if [ -z "$max" ] || [ "$max" = "max" ]; then exec /usr/bin/free "$@"; fi
+
+div=1024; label="Ki"
+for a in "$@"; do
+    case "$a" in
+        -b|--bytes) div=1;          label="B"  ;;
+        -k|--kibi)  div=1024;       label="Ki" ;;
+        -m|--mebi)  div=1048576;    label="Mi" ;;
+        -g|--gibi)  div=1073741824; label="Gi" ;;
+        -h|--human) div=1048576;    label="Mi" ;;
+    esac
+done
+cache=$(awk '/^inactive_file /{print $2}' /sys/fs/cgroup/memory.stat 2>/dev/null)
+: "${cache:=0}"
+# Same column layout as the real free, so anything that reads it still works.
+awk -v max="$max" -v cur="$cur" -v cache="$cache" -v d="$div" 'BEGIN{
+    used = cur - cache; if (used < 0) used = 0
+    avail = max - used; if (avail < 0) avail = 0
+    printf "%15s%12s%12s%12s%12s%12s\n", "total", "used", "free", "shared", "buff/cache", "available"
+    printf "Mem:%12.0f%12.0f%12.0f%12.0f%12.0f%12.0f\n", max/d, used/d, avail/d, 0, cache/d, avail/d
+    printf "Swap:%11.0f%12.0f%12.0f\n", 0, 0, 0
+}'

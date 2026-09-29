@@ -1,0 +1,16 @@
+# Mapping users to existing home directories (Admin → Users → Home directory).
+#
+# The backend has to see the same paths the Docker daemon will mount, so that
+# it can check a mapping, measure how much space it uses, and read a job's
+# output from it.  Mounted READ-ONLY on purpose: the platform never writes into
+# a directory it did not create, its own files live beside the workspace, not
+# inside it.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.homes.yml up -d
+#
+# Set HOME_MOUNT_ROOT in .env to match.  Leave this file out of the command and
+# the feature simply reports that a mapped directory is not visible.
+services:
+  backend:
+    volumes:
+      - ${HOME_MOUNT_ROOT:-/home}:${HOME_MOUNT_ROOT:-/home}:ro

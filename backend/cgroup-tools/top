@@ -1,0 +1,10 @@
+#!/bin/sh
+# top, prefaced by this workspace's allocation.
+#
+# top's own header counts every CPU and all the memory on the machine, none of
+# which this workspace may use.  The summary below is the real allocation; the
+# process list that follows is accurate.  Use /usr/bin/top to skip this.
+if [ -t 1 ] && [ -x /usr/local/bin/platform-limits ]; then
+    /usr/local/bin/platform-limits
+fi
+exec /usr/bin/top "$@"

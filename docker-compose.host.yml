@@ -1,0 +1,14 @@
+# HTTP_MODE=host override, the machine already runs nginx/Caddy/Apache.
+#
+# Publishes the frontend container (which also proxies /api and /jupyter to the
+# backend over the Docker network) on a loopback port for the host web server
+# to sit in front of.  Nothing in this stack touches :80 or :443.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.host.yml up -d
+#
+# Then point the host server at http://127.0.0.1:${WEB_PORT}, see
+# nginx/host/gpu-platform.conf for a ready-made server block.
+services:
+  frontend:
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-7080}:80"

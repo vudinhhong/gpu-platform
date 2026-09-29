@@ -1,0 +1,11 @@
+#!/bin/sh
+# nproc for this workspace.
+#
+# The real nproc counts every CPU on the machine, so `make -j$(nproc)` would
+# start far more jobs than this workspace is allowed to run and they would just
+# queue against each other.  This reports the allocation.
+[ "$1" = "--all" ] && exec /usr/bin/nproc --all
+quota=$(cut -d' ' -f1 /sys/fs/cgroup/cpu.max 2>/dev/null)
+period=$(cut -d' ' -f2 /sys/fs/cgroup/cpu.max 2>/dev/null)
+if [ -z "$quota" ] || [ "$quota" = "max" ]; then exec /usr/bin/nproc "$@"; fi
+awk -v q="$quota" -v p="$period" 'BEGIN{n=int(q/p); print (n<1 ? 1 : n)}'

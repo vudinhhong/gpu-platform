@@ -1,0 +1,107 @@
+#!/usr/bin/python3
+"""myjobs: your own jobs, newest first.
+
+`queue` is the shared queue: everybody's work, and only what is public about
+it. This is the other half: your jobs alone, finished ones included, with the
+details that are yours to see.
+
+Not called `jobs`: that is a shell builtin for job control, and a command
+installed under that name could never be typed, because bash resolves the
+builtin first. Taking the name away from the shell would cost every user `Ctrl+Z`,
+`bg`, `jobs`, which is a poor trade for a listing.
+"""
+
+import argparse
+import sys
+
+sys.path.insert(0, "/usr/local/lib/gpu-platform")
+from _jobclient import call, duration, paint  # noqa: E402
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="myjobs",
+        description="Your own jobs, newest first.",
+        epilog="examples:\n"
+               "  myjobs             your last 25 jobs\n"
+               "  myjobs -n 100      your last 100\n"
+               "  myjobs -a          only what is waiting or running\n"
+               "  myjobs -f          only what has finished\n"
+               "\n`queue` shows the shared queue instead: everybody's work, which is\n"
+               "what tells you whether a job submitted now would start or wait.\n"
+               "`queue <id>` opens one job in detail.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("-n", "--limit", type=int, default=25, metavar="N",
+                        help="how many to show (default: 25)")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("-a", "--active", action="store_true",
+                       help="only jobs that are waiting or running")
+    group.add_argument("-f", "--finished", action="store_true",
+                       help="only jobs that have finished")
+    args = parser.parse_args()
+
+    if args.limit < 1:
+        # argparse would pass it through and the platform would refuse it with
+        # a less obvious message.
+        print("error: -n has to be at least 1", file=sys.stderr)
+        sys.exit(1)
+
+    params = {"limit": args.limit}
+    if args.active:
+        params["active_only"] = "true"
+    elif args.finished:
+        params["finished_only"] = "true"
+
+    data = call("GET", "/api/jobs", params=params)
+    rows = data.get("jobs") or []
+    if not rows:
+        if args.active:
+            print("Nothing of yours is running or waiting.")
+        elif args.finished:
+            print("None of your jobs have finished yet.")
+        else:
+            print("You have no jobs. Submit one with:  submit <script.sh>")
+        return
+
+    print(f"{'ID':>5}  {'STATUS':<10} {'GPU':<9} {'RUNTIME':>9}  "
+          f"{'NAME':<22} OUTPUT")
+    for job in rows:
+        gpu = ",".join(str(g) for g in job["gpus"]) if job["gpus"] else (
+            f"q:{job['queue_position']}" if job.get("queue_position")
+            else (f"{job['gpu_count']}x{job['gpu_memory_mb']}M"
+                  if job["gpu_count"] else "cpu"))
+        # Padded before it is coloured: `paint` adds escape codes in a terminal
+        # and none when the output is piped, so padding the coloured string
+        # would line the columns up in exactly one of those two cases.
+        status_cell = paint(f"{job['status']:<10}")
+        print(f"{job['id']:>5}  {status_cell} {gpu:<9} "
+              f"{duration(job.get('runtime_seconds')):>9}  "
+              f"{(job['name'] or '')[:22]:<22} {job['output'] or ''}")
+
+    total = (data.get("pagination") or {}).get("total")
+    shown = len(rows)
+    if total and total > shown:
+        # 500 is the platform's ceiling on one request; suggesting more than
+        # that would hand back a number that gets refused.
+        print(f"\nShowing {shown} of {total}. All of them:  myjobs -n {min(total, 500)}")
+
+    active = data.get("active_total")
+    if active:
+        print(f"{active} of your jobs are running or waiting. `queue` shows the "
+              "whole queue they are in.")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except BrokenPipeError:
+        # Piping into head/less closes the pipe early; that is not an error.
+        # Close stdout explicitly so Python does not report it again at exit.
+        try:
+            sys.stdout.close()
+        except Exception:
+            pass
+        sys.exit(0)
+    except KeyboardInterrupt:
+        sys.exit(130)
