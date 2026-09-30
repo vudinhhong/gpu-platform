@@ -157,8 +157,8 @@ export function ResourcesTab() {
         <Stat label="Host RAM" value={`${mem.percent ?? '—'}%`} sub={`${fmtMb(mem.used_mb)} / ${fmtMb(mem.total_mb)}`} />
         <Stat label="Data disk" value={`${disk.percent ?? '—'}%`}
               sub={`${disk.used_gib ?? '—'} / ${disk.total_gib ?? '—'} GiB · ${disk.free_gib ?? '—'} GiB free`} />
-        <Stat label="Session backend" value={data.settings?.session_backend ?? '—'}
-              sub={data.settings?.idle_timeout_minutes ? `idle reap ${data.settings.idle_timeout_minutes}m` : 'idle reap off'} />
+        <Stat label="Idle reap" value={data.settings?.idle_timeout_minutes ? `${data.settings.idle_timeout_minutes}m` : 'off'}
+              sub={`defaults ${data.settings?.default_cpu_cores ?? '—'} cores · ${fmtMb(data.settings?.default_memory_limit_mb)}`} />
       </div>
 
       <Card title="GPUs">

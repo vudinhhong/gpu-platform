@@ -24,10 +24,6 @@ class Settings(BaseSettings):
     # Database – SQLite by default; swap for PostgreSQL in production
     DATABASE_URL: str = "sqlite:///./data/gpu_platform.db"
 
-    # Jupyter port pool (one port per user session, process backend)
-    JUPYTER_PORT_START: int = 8100
-    JUPYTER_PORT_END: int = 8199
-
     # Base directory for per-user notebook working directories
     JUPYTER_DATA_DIR: str = "/jupyter_data"
     # Directory an administrator may map a user's workspace into, when that
@@ -59,10 +55,7 @@ class Settings(BaseSettings):
     # DEFAULT_CPU_HOURS_QUOTA.
     DEFAULT_CPU_LIMIT_SECONDS: int = 0
 
-    # ── Session backend ──────────────────────────────────────────────────
-    # "process"   = jupyter lab subprocess (legacy, single-container mode)
-    # "container" = one Docker container per user (recommended with GPUs)
-    SESSION_BACKEND: str = "process"
+    # ── Per-user workspace containers ─────────────────────────────────────
     # Default image for per-user Jupyter containers
     JUPYTER_IMAGE: str = "gpu-jupyter:latest"
     # Optional allow-list users may choose from: "Label=ref,Label2=ref2".
@@ -118,9 +111,8 @@ class Settings(BaseSettings):
     # GPU-hours a user's jobs may spend, counted as wall-clock x cards held.
     DEFAULT_GPU_HOURS_QUOTA: float = 0.0
     # CPU core-hours their jobs may spend, as wall-clock x cores allocated.
-    # This is the CPU budget with teeth on the container backend;
-    # DEFAULT_CPU_LIMIT_SECONDS above is an RLIMIT_CPU ceiling per process tree
-    # that only the process backend applies.
+    # This is the CPU budget with teeth; DEFAULT_CPU_LIMIT_SECONDS above is an
+    # RLIMIT_CPU ceiling per process tree that nothing applies any more.
     DEFAULT_CPU_HOURS_QUOTA: float = 0.0
     # What to do about a RUNNING JOB whose owner has just run out.  Admission
     # cannot cover this on its own: a job admitted with twenty minutes of

@@ -71,7 +71,7 @@ def enforce_disk_quota() -> List[Dict[str, Any]]:
             elif action == "stop":
                 try:
                     session_backend.stop_session(
-                        user.username, session.pid, session.container_id
+                        user.username, session.container_id
                     )
                 except Exception as exc:  # noqa: BLE001
                     logger.error("Quota stop failed for %r: %s", user.username, exc)
@@ -175,7 +175,7 @@ def reap_idle() -> List[Dict[str, Any]]:
                 (datetime.utcnow() - session.last_activity).total_seconds() // 60
             )
             try:
-                session_backend.stop_session(username, session.pid, session.container_id)
+                session_backend.stop_session(username, session.container_id)
             except Exception as exc:  # noqa: BLE001 (keep reaping the rest)
                 logger.error("Idle reap failed for %r: %s", username, exc)
                 continue

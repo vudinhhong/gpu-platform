@@ -28,7 +28,6 @@ services:
       - HOME_MOUNT_ROOT=${HOME_MOUNT_ROOT:-/home}
       - GPU_COUNT=${GPU_COUNT:-2}
       - ALLOW_MOCK_GPU=${ALLOW_MOCK_GPU:-false}
-      - SESSION_BACKEND=${SESSION_BACKEND:-container}
       - JUPYTER_IMAGE=${JUPYTER_IMAGE:-gpu-jupyter:latest}
       - JUPYTER_IMAGES=${JUPYTER_IMAGES:-}
       - DOCKER_NETWORK=${DOCKER_NETWORK:-workspace-gpu_gpu-net}
@@ -100,9 +99,9 @@ services:
       - ./jupyter_data:/jupyter_data
       # Backend needs the Docker socket to create per-user containers
       - /var/run/docker.sock:/var/run/docker.sock
-    # GPU device access for the backend (GPU monitor + ACL mode) is added by
-    # docker-compose.gpu.yml, merged by deploy.sh only on hosts with a working
-    # NVIDIA setup.
+    # GPU device access for the backend (so the GPU monitor can read the cards)
+    # is added by docker-compose.gpu.yml, merged by deploy.sh only on hosts with
+    # a working NVIDIA setup.
     ports:
       # Loopback by default: the API is reached through the web tier, not
       # directly from the network.  Set BACKEND_BIND=0.0.0.0 to expose it.

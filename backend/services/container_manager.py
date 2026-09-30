@@ -1,7 +1,7 @@
-"""Per-user Docker container management (SESSION_BACKEND=container).
+"""Per-user Docker container management.
 
-Each platform user gets a dedicated JupyterLab container instead of a raw
-process:
+Each platform user gets a dedicated JupyterLab container rather than a bare
+process sharing the platform's own namespaces:
 
 * GPU isolation is enforced by the Docker daemon through **device requests**
   (the API form of ``docker run --gpus device=<uuid>``), a kernel-level
@@ -61,7 +61,7 @@ def _docker_client():
         import docker  # noqa: WPS433 (optional dependency)
     except ImportError as exc:
         raise RuntimeError(
-            "The 'docker' Python package is required for SESSION_BACKEND=container. "
+            "The 'docker' Python package is required to run user workspaces. "
             "Install it with:  pip install docker"
         ) from exc
 
@@ -636,8 +636,7 @@ def start_user_container(
         # peer" instead of a prompt.  docker-init (tini) reaps orphans, which
         # keeps the count flat no matter how many times someone reconnects.
         "init": True,
-        # Fork-bomb ceiling (cgroup pids.max), the container equivalent of
-        # RLIMIT_NPROC in the process backend.  Per-user when an administrator
+        # Fork-bomb ceiling (cgroup pids.max).  Per-user when an administrator
         # set one, since a parallel build or a DataLoader with many workers
         # runs into this long before a fork bomb would.
         "pids_limit": max_processes or settings.CONTAINER_PIDS_LIMIT or None,

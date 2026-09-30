@@ -221,8 +221,8 @@ def _rescue_cpu_core_values() -> None:
 
     A value no larger than the host's core count cannot plausibly be a
     CPU-seconds budget (four seconds of CPU would end a session instantly), so
-    it is moved to ``cpu_cores``.  Larger values are left alone: those are
-    genuine RLIMIT_CPU budgets for the process backend.
+    it is moved to ``cpu_cores``.  Larger values are left alone: those were
+    genuine RLIMIT_CPU budgets back when a session could be a bare process.
     """
     import os as _os
 

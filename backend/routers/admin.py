@@ -370,9 +370,9 @@ async def reset_password(
     revoke_tokens(user)
     db.add(user)
     # Keep a running session's SSH login in step with the new password.
-    from services import container_manager, session_backend
+    from services import container_manager
 
-    if settings.UNIFIED_PASSWORD and session_backend.active_backend() == "container":
+    if settings.UNIFIED_PASSWORD:
         container_manager.update_container_password(user.username, user.unix_password_hash)
         if not user.hashed_jupyter_password:
             container_manager.write_jupyter_auth_config(
@@ -633,11 +633,8 @@ async def delete_assignment(
 # ---------------------------------------------------------------------------
 
 def _session_view(session: models.JupyterSession) -> Dict[str, Any]:
-    """Serialize a session row, reconciling dead processes/containers."""
-    if session.container_id:
-        running = session_backend.is_alive(session.user.username, None, session.container_id)
-    else:
-        running = session_backend.is_alive(session.user.username, session.pid, None)
+    """Serialize a session row, reconciling rows whose container is gone."""
+    running = session_backend.is_alive(session.user.username, session.container_id)
     view = JupyterSessionResponse.model_validate(session).model_dump(mode="json")
     view["status"] = "running" if (running and session.status == models.SessionStatus.running) else (
         "stopped" if not running else session.status.value
@@ -675,10 +672,7 @@ def stop_user_session(
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
-    if session.container_id:
-        stopped = session_backend.stop_session(session.user.username, None, session.container_id)
-    else:
-        stopped = session_backend.stop_session(session.user.username, session.pid, None)
+    stopped = session_backend.stop_session(session.user.username, session.container_id)
     if not stopped:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -773,7 +767,6 @@ def platform_resources(db: Session = Depends(get_db)):
             for finding in findings
         ],
         "settings": {
-            "session_backend": session_backend.active_backend(),
             "idle_timeout_minutes": settings.IDLE_TIMEOUT_MINUTES,
             "default_memory_limit_mb": settings.DEFAULT_MEMORY_LIMIT_MB,
             "default_cpu_cores": settings.DEFAULT_CPU_CORES,

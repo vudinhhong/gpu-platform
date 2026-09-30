@@ -30,9 +30,9 @@ def _sync_container_password(user: models.User) -> bool:
     makes "your SSH password changed too" a statement about now rather than
     about the next session start.
     """
-    from services import container_manager, session_backend
+    from services import container_manager
 
-    if not settings.UNIFIED_PASSWORD or session_backend.active_backend() != "container":
+    if not settings.UNIFIED_PASSWORD:
         return False
     applied = container_manager.update_container_password(
         user.username, user.unix_password_hash

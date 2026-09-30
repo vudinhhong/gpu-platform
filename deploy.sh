@@ -26,8 +26,9 @@ if [ "$HOST_GPU" = "true" ]; then
         | awk '{print "  GPU detected: " $0}' || true
 else
     echo "GPU check: no usable NVIDIA GPU + nvidia container runtime found."
-    echo "  → backend runs WITHOUT device requests; user sessions default to"
-    echo "    SESSION_BACKEND=process (no GPU passthrough)."
+    echo "  → backend runs WITHOUT device requests.  Workspaces are still one"
+    echo "    container per user (RAM, CPU, PIDs and I/O limits, own filesystem,"
+    echo "    own SSH endpoint); the only thing missing is the GPU."
 fi
 
 # ── Mapped home directories ──────────────────────────────────────────────────
@@ -45,8 +46,23 @@ if [ -z "$HOME_MOUNT_ROOT" ] && [ -f .env ]; then
 fi
 HOME_MOUNT_ROOT="${HOME_MOUNT_ROOT:-/home}"
 
+# Docker Desktop (macOS, Windows, and its Linux build) runs the daemon inside a
+# VM and can only bind-mount host paths that were explicitly shared with it.
+# On macOS /home exists as an empty autofs mount point, so the directory test
+# below passes and `up -d` then dies with "Mounts denied: the path /home is not
+# shared from the host": the entire stack refuses to start over a feature that
+# nobody on a laptop is using.
+DOCKER_DESKTOP=false
+if docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -qi 'docker desktop'; then
+    DOCKER_DESKTOP=true
+fi
+
 MAP_HOMES=false
-if [ -d "$HOME_MOUNT_ROOT" ]; then
+if [ "$DOCKER_DESKTOP" = "true" ] && [ "${FORCE_HOME_MOUNT:-}" != "1" ]; then
+    echo "Home mapping: skipped, Docker Desktop only mounts paths shared with its VM."
+    echo "  (share $HOME_MOUNT_ROOT under Settings → Resources → File sharing, then"
+    echo "   rerun as FORCE_HOME_MOUNT=1 ./deploy.sh to map it anyway.)"
+elif [ -d "$HOME_MOUNT_ROOT" ]; then
     MAP_HOMES=true
     echo "Home mapping: $HOME_MOUNT_ROOT mounted read-only into the backend."
 else
@@ -150,13 +166,24 @@ if [ ! -f .env ]; then
     if command -v openssl >/dev/null 2>&1; then
         SECRET_KEY=$(openssl rand -hex 32)
     else
-        SECRET_KEY=$(tr -dc 'a-f0-9' < /dev/urandom | head -c 64)
+        # `head` closes the pipe, `tr` dies of SIGPIPE, and `set -o pipefail`
+        # turns that into a failed deployment even though the key is fine.
+        SECRET_KEY=$(tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c 64 || true)
+        if [ ${#SECRET_KEY} -ne 64 ]; then
+            echo "ERROR: could not generate SECRET_KEY (no openssl, no /dev/urandom)." >&2
+            exit 1
+        fi
     fi
 
+    # Whether this host has a GPU is recorded, not rediscovered.  The guard
+    # further down refuses to deploy when .env expects GPUs and none are
+    # visible, which is right for a GPU host having a bad day and wrong for a
+    # machine that never had one: it would fail every deployment after the
+    # first.  Stating it here answers the question once.
     if [ "$HOST_GPU" = "true" ]; then
-        DEFAULT_SESSION_BACKEND=container
+        CPU_ONLY_MARK=false
     else
-        DEFAULT_SESSION_BACKEND=process
+        CPU_ONLY_MARK=true
     fi
 
     cat > .env << ENVEOF
@@ -166,22 +193,44 @@ HTTP_MODE=$HTTP_MODE
 WEB_BIND=$WEB_BIND
 WEB_PORT=$WEB_PORT
 GPU_COUNT=2
-SESSION_BACKEND=$DEFAULT_SESSION_BACKEND
+# true = this host is known to have no GPU, so a missing GPU is expected and
+# not a fault. Cleared automatically by deploy.sh once a GPU shows up.
+CPU_ONLY=$CPU_ONLY_MARK
 JUPYTER_DATA_DIR=/jupyter_data
 JUPYTER_DATA_HOST_DIR=$(pwd)/jupyter_data
-JUPYTER_PORT_START=8100
-JUPYTER_PORT_END=8199
 ENVEOF
 
-    echo "  .env created (SESSION_BACKEND=$DEFAULT_SESSION_BACKEND, HTTP_MODE=$HTTP_MODE)."
+    echo "  .env created (HTTP_MODE=$HTTP_MODE)."
+    [ "$CPU_ONLY_MARK" = "true" ] && echo "  CPU_ONLY=true recorded: no GPU here, workspaces are CPU containers."
     echo ""
     echo "  ⚠  Default admin password: admin123.  CHANGE IT after first login!"
 else
     echo ""
     echo ".env already exists, reconciling with this host..."
 
-    # Drop knobs from superseded deployment approaches.
-    sed -i.bak '/^COMPOSE_PROFILES=/d' .env && rm -f .env.bak
+    # Drop knobs from superseded deployment approaches.  SESSION_BACKEND chose
+    # between one container per user and a `jupyter lab` subprocess sharing the
+    # platform's own namespaces; the subprocess backend is gone, so the setting
+    # has nothing left to select.  JUPYTER_PORT_* was that backend's host port
+    # pool: a container's Jupyter is reached over the Docker network by name.
+    if grep -qE '^SESSION_BACKEND=process' .env; then
+        echo "  ⚠  SESSION_BACKEND=process is no longer a thing.  That backend ran"
+        echo "     every workspace as a subprocess in one container, where each user"
+        echo "     could read the others' files; it has been removed.  Workspaces"
+        echo "     are containers now, and any session it started is already gone --"
+        echo "     users press Start once and get a container instead."
+        # deploy.sh only ever wrote `process` on a host with no GPU, so the file
+        # is already telling us what the CPU_ONLY guard below would otherwise
+        # stop to ask.  Carry the answer over instead of failing the upgrade on
+        # a machine that has been CPU-only all along.
+        if ! grep -qE '^CPU_ONLY=' .env; then
+            printf 'CPU_ONLY=true\n' >> .env
+            echo "     CPU_ONLY=true carried over from it."
+        fi
+    fi
+    sed -i.bak -e '/^COMPOSE_PROFILES=/d' -e '/^SESSION_BACKEND=/d' \
+               -e '/^JUPYTER_PORT_START=/d' -e '/^JUPYTER_PORT_END=/d' .env \
+        && rm -f .env.bak
 
     # User containers bind-mount jupyter_data/<user>; the Docker daemon
     # resolves that path on the HOST, so it must be the host-side path.
@@ -195,40 +244,54 @@ else
     set_env_var WEB_BIND "$WEB_BIND"
     set_env_var WEB_PORT "$WEB_PORT"
 
-    # A host that was running GPU workspaces a minute ago and cannot be seen
-    # to have a GPU now is far more likely to be a transient nvidia-smi failure
-    # than a machine that lost its cards.  This used to rewrite .env to
-    # SESSION_BACKEND=process, which is a one-way downgrade: the check below
-    # only ever prints a hint on the way back, so one bad reading turned a GPU
-    # platform into a CPU one until somebody noticed and edited the file.  It
-    # now refuses instead, and leaves .env alone.
-    if [ "$HOST_GPU" != "true" ] && grep -qE '^SESSION_BACKEND=container' .env; then
-        if [ "${FORCE_CPU_ONLY:-}" = "1" ]; then
-            set_env_var SESSION_BACKEND "process"
-            echo "  ⚠  SESSION_BACKEND downgraded to 'process' (FORCE_CPU_ONLY=1)."
-        else
-            echo ""
-            echo "ERROR: .env says SESSION_BACKEND=container, but no usable GPU was"
-            echo "       detected on this host.  Refusing to deploy, because the"
-            echo "       likeliest cause is a temporary fault, and downgrading would"
-            echo "       silently take GPU isolation away from every workspace."
-            echo ""
-            echo "  Check, in this order:"
-            echo "    nvidia-smi -L                      # driver alive?"
-            echo "    docker info | grep -i nvidia       # runtime registered?"
-            echo "    systemctl status docker"
-            echo ""
-            echo "  If this host really has no GPU any more and you mean to run"
-            echo "  CPU-only sessions, say so explicitly:"
-            echo ""
-            echo "    FORCE_CPU_ONLY=1 ./deploy.sh"
-            echo ""
-            exit 1
-        fi
+    # A host that was running GPU workspaces a minute ago and cannot be seen to
+    # have a GPU now is far more likely to be a transient nvidia-smi failure than
+    # a machine that lost its cards, so a missing GPU stops the deployment rather
+    # than being worked around: every workspace and every job would otherwise
+    # come up without the card its owner was assigned, and the platform would
+    # look broken in a way that points at the wrong layer.
+    #
+    # A host that genuinely has no GPU is a different statement, and a perfectly
+    # good thing to share: a workspace with no card attached gets
+    # NVIDIA_VISIBLE_DEVICES=void and keeps memory.max, cpu.max, the PIDs cap,
+    # the I/O throttles, its own filesystem and its own SSH endpoint.  So the
+    # answer is recorded once as CPU_ONLY in .env instead of being asserted with
+    # a flag on every deployment.
+
+    # Said once and remembered, rather than re-asserted on every run.
+    CPU_ONLY_ENV="$(grep -E '^CPU_ONLY=' .env | tail -1 | cut -d= -f2- || true)"
+    if [ "${FORCE_CPU_ONLY:-}" = "1" ] && [ "$CPU_ONLY_ENV" != "true" ]; then
+        set_env_var CPU_ONLY "true"
+        CPU_ONLY_ENV=true
+        echo "  → CPU_ONLY=true recorded (FORCE_CPU_ONLY=1); no need to repeat the flag."
     fi
-    if [ "$HOST_GPU" = "true" ] && grep -qE '^SESSION_BACKEND=process' .env; then
-        echo "  ℹ  This host HAS GPUs but SESSION_BACKEND=process."
-        echo "     Set SESSION_BACKEND=container in .env for real GPU isolation."
+    # A GPU turning up means the exemption has outlived its reason: put the
+    # guard back, so the next failed nvidia-smi is caught rather than shrugged at.
+    if [ "$HOST_GPU" = "true" ] && [ "$CPU_ONLY_ENV" = "true" ]; then
+        set_env_var CPU_ONLY "false"
+        CPU_ONLY_ENV=false
+        echo "  → CPU_ONLY cleared: this host has a GPU again."
+    fi
+
+    if [ "$HOST_GPU" != "true" ] && [ "$CPU_ONLY_ENV" != "true" ]; then
+        echo ""
+        echo "ERROR: this host is not recorded as CPU-only, but no usable GPU was"
+        echo "       detected on it.  Refusing to deploy, because the likeliest"
+        echo "       cause is a temporary fault and every workspace would come up"
+        echo "       without the card it is supposed to hold."
+        echo ""
+        echo "  Check, in this order:"
+        echo "    nvidia-smi -L                      # driver alive?"
+        echo "    docker info | grep -i nvidia       # runtime registered?"
+        echo "    systemctl status docker"
+        echo ""
+        echo "  If this host really has no GPU and you mean to run CPU-only"
+        echo "  workspaces, say so once.  Containers without a GPU keep every"
+        echo "  other limit:"
+        echo ""
+        echo "    FORCE_CPU_ONLY=1 ./deploy.sh"
+        echo ""
+        exit 1
     fi
 fi
 
@@ -252,9 +315,30 @@ fi
 # cached and guarantees the image exists before anyone can press "Start".
 
 echo ""
+# `--pull` refuses to carry a stale base layer forward, and the image is only
+# promoted to :latest after it has been shown to run.  Both halves were learned
+# the hard way: a cached `python3.11` that died with SIGILL produced an image
+# that built without complaint and whose every workspace then crash-looped, and
+# because nothing here ever ran the thing it had just built, `:latest` was
+# rewritten to point at it.  Read back what was applied, do not trust that it
+# worked -- the same rule the platform applies to cgroup limits.
 echo "Building per-user Jupyter image (gpu-jupyter:latest)..."
-if docker build -f backend/jupyter.Dockerfile -t gpu-jupyter:latest backend/; then
-    echo "  gpu-jupyter:latest ✓"
+if docker build --pull -f backend/jupyter.Dockerfile -t gpu-jupyter:candidate backend/; then
+    if docker run --rm --entrypoint sh gpu-jupyter:candidate \
+            -c 'jupyter lab --version' >/dev/null 2>&1; then
+        # Keep the outgoing image reachable: a rollback tag is worth nothing if
+        # it points at the same thing that has just been found wanting.
+        if docker image inspect gpu-jupyter:latest >/dev/null 2>&1; then
+            docker tag gpu-jupyter:latest gpu-jupyter:rollback
+        fi
+        docker tag gpu-jupyter:candidate gpu-jupyter:latest
+        echo "  gpu-jupyter:latest ✓ (jupyter starts in it; previous image kept as gpu-jupyter:rollback)"
+    else
+        echo "ERROR: the image built, but 'jupyter lab --version' does not run inside it." >&2
+        echo "       gpu-jupyter:latest left untouched, so running workspaces keep the" >&2
+        echo "       image they have. The rejected build is kept as gpu-jupyter:candidate" >&2
+        echo "       for inspection:  docker run --rm -it gpu-jupyter:candidate bash" >&2
+    fi
 else
     echo "WARNING: image build failed, user sessions will fall back to the process backend."
 fi
@@ -295,10 +379,16 @@ fi
 # Keep the last 20 of each; older ones are noise, and jupyter_data is the thing
 # actually worth disk space here.
 for pattern in "env-*.bak" "db-*.db" "compose-*.yml"; do
+    # A pattern that matches nothing is the normal case on a first deployment:
+    # there is no database to snapshot yet.  `ls` then exits non-zero, and with
+    # `set -o pipefail` that aborted the whole run right here -- silently,
+    # because stderr is discarded, and before a single container was started.
+    # The snapshot lines were the last thing printed, which is exactly what it
+    # looked like: deploy.sh reporting success and then stopping.
     # shellcheck disable=SC2086
     ls -1t $SNAP_DIR/$pattern 2>/dev/null | tail -n +21 | while read -r old; do
         rm -f "$old"
-    done
+    done || true
 done
 
 # ── Build and start ───────────────────────────────────────────────────────────
@@ -314,11 +404,19 @@ docker compose "${COMPOSE_ARGS[@]}" up -d --build
 # but nothing ever answers. Catch it here instead of letting it look like an
 # application bug.
 
+# In edge mode the bundled nginx owns :80 and nothing publishes WEB_PORT, so
+# probing WEB_BIND:WEB_PORT there reports a failure the stack does not have.
+if [ "$HTTP_MODE" = "host" ]; then
+    CHECK_URL="http://${WEB_BIND}:${WEB_PORT}"
+else
+    CHECK_URL="http://127.0.0.1"
+fi
+
 echo ""
-echo "Checking that the host can reach the stack..."
+echo "Checking that the host can reach the stack ($CHECK_URL)..."
 REACHABLE=false
 for _ in $(seq 1 15); do
-    if curl -sf -m 3 "http://${WEB_BIND}:${WEB_PORT}/api/health" >/dev/null 2>&1; then
+    if curl -sf -m 3 "${CHECK_URL}/api/health" >/dev/null 2>&1; then
         REACHABLE=true
         break
     fi
@@ -326,11 +424,11 @@ for _ in $(seq 1 15); do
 done
 
 if [ "$REACHABLE" = "true" ]; then
-    echo "  http://${WEB_BIND}:${WEB_PORT} ✓"
+    echo "  $CHECK_URL ✓"
 else
     BRIDGE_IF="gpu-platform0"
     echo ""
-    echo "  ✗ http://${WEB_BIND}:${WEB_PORT} did not answer."
+    echo "  ✗ $CHECK_URL did not answer."
     if command -v iptables >/dev/null 2>&1 \
        && iptables -S 2>/dev/null | grep -q '^-P OUTPUT DROP' \
        && ! iptables -C OUTPUT -o "$BRIDGE_IF" -j ACCEPT 2>/dev/null; then
@@ -350,7 +448,12 @@ fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 
-SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+# `hostname -I` is GNU-only; on macOS it is an illegal option, and under
+# `set -o pipefail` the failed pipeline took the final summary with it.
+SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+if [ -z "$SERVER_IP" ] && command -v ipconfig >/dev/null 2>&1; then
+    SERVER_IP="$(ipconfig getifaddr en0 2>/dev/null || true)"
+fi
 [ -z "$SERVER_IP" ] && SERVER_IP="YOUR_SERVER_IP"
 
 echo ""

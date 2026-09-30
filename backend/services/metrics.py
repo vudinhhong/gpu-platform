@@ -190,16 +190,15 @@ def _collect_one(container) -> Optional[Dict[str, Any]]:
 def refresh() -> Dict[str, Any]:
     """Collect a fresh snapshot (blocking, background task only)."""
     containers: List[Dict[str, Any]] = []
-    if (settings.SESSION_BACKEND or "process").lower() == "container":
-        try:
-            from services import container_manager
+    try:
+        from services import container_manager
 
-            running = container_manager.list_platform_containers()
-            if running:
-                with ThreadPoolExecutor(max_workers=min(8, len(running))) as pool:
-                    containers = [c for c in pool.map(_collect_one, running) if c]
-        except Exception as exc:  # noqa: BLE001 (docker unavailable)
-            logger.debug("container metrics unavailable: %s", exc)
+        running = container_manager.list_platform_containers()
+        if running:
+            with ThreadPoolExecutor(max_workers=min(8, len(running))) as pool:
+                containers = [c for c in pool.map(_collect_one, running) if c]
+    except Exception as exc:  # noqa: BLE001 (docker unavailable)
+        logger.debug("container metrics unavailable: %s", exc)
 
     snapshot = {
         "collected_at": time.time(),

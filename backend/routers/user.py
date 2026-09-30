@@ -27,7 +27,6 @@ from services import (
     crypto,
     jobs as job_service,
     gpu_monitor,
-    jupyter_manager,
     metrics,
     quota,
     session_backend,
@@ -43,9 +42,9 @@ def _resolve_limits(current_user: models.User):
     """Resolve this user's RAM / CPU caps from assignment → platform defaults.
 
     Returns ``(memory_limit_mb, cpu_cores, cpu_limit_seconds, max_processes)``.
-    Cores and CPU-seconds are separate knobs: cores is the cgroup cap that
-    applies to the container backend, CPU-seconds is RLIMIT_CPU and only means
-    anything in the process backend.  ``max_processes`` is cgroup ``pids.max``.
+    Cores is the cgroup cap (``cpu.max``); CPU-seconds is a per-process
+    RLIMIT_CPU ceiling the admin form no longer offers and nothing applies any
+    more, kept so old assignments still load.  ``max_processes`` is ``pids.max``.
     """
     assignment = current_user.gpu_assignment
     memory_limit_mb = assignment.memory_limit_mb if assignment else None
@@ -256,8 +255,6 @@ def read_my_usage(
 @router.get("/me/images")
 def read_available_images(current_user: models.User = Depends(get_current_user)):
     """Jupyter images this user may launch, and the one they last picked."""
-    if session_backend.active_backend() != "container":
-        return {"images": [], "selected": None, "supported": False}
     return {
         "images": container_manager.available_images(),
         "selected": current_user.preferred_image or settings.JUPYTER_IMAGE,
@@ -297,7 +294,7 @@ def jupyter_status(
     # Reconcile: process/container died without us noticing (OOM, reboot…)
     if session.status == models.SessionStatus.running:
         alive = session_backend.is_alive(
-            current_user.username, session.pid, session.container_id
+            current_user.username, session.container_id
         )
         if not alive:
             session.status = models.SessionStatus.stopped
@@ -335,7 +332,7 @@ def jupyter_start(
         session is not None
         and session.status == models.SessionStatus.running
         and session_backend.is_alive(
-            current_user.username, session.pid, session.container_id
+            current_user.username, session.container_id
         )
     ):
         return _session_payload(current_user, session)
@@ -346,13 +343,10 @@ def jupyter_start(
     # the only place the user can delete files from; see below.
     budget = quota.workspace_state(db, current_user)
 
-    port = jupyter_manager.find_available_port()
-    if port is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The platform has no free slot for a new workspace right now. Please try again shortly.",
-        )
-    token = jupyter_manager.generate_token()
+    # Jupyter listens on the same port inside every container; the proxy finds
+    # it by Docker-network DNS, so no host port is allocated or consumed here.
+    port = container_manager.CONTAINER_PORT
+    token = session_backend.generate_token()
 
     if session is None:
         session = models.JupyterSession(
@@ -392,20 +386,25 @@ def jupyter_start(
 
     requested_image = (payload or {}).get("image") or current_user.preferred_image
 
-    # Container backend needs both the Docker socket AND the pre-built image;
-    # otherwise fail over to the process backend so the user still gets a
-    # working (CPU-only) environment instead of an opaque error.
-    backend = session_backend.active_backend()
-    chosen_image = None
-    if backend == "container":
-        chosen_image = container_manager.resolve_image(requested_image)
-        if not container_manager.image_exists(chosen_image):
-            logger.warning(
-                "Image %s missing, falling back to the process backend for %r",
-                chosen_image, current_user.username,
-            )
-            backend = "process"
-            chosen_image = None
+    # No image, no workspace.  This used to fall back to a second backend that
+    # ran Jupyter as a subprocess beside every other user's, which turned a
+    # missing image into a silent loss of isolation; it is gone.  ./deploy.sh
+    # builds the image, so say what is wrong and let an administrator fix it.
+    chosen_image = container_manager.resolve_image(requested_image)
+    if not container_manager.image_exists(chosen_image):
+        logger.error(
+            "Workspace image %s is missing, refusing to start a workspace for %r. "
+            "Run ./deploy.sh to build it.",
+            chosen_image, current_user.username,
+        )
+        session.status = models.SessionStatus.error
+        db.add(session)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The workspace image is not available on this platform yet. "
+                   "Please contact an administrator.",
+        )
 
     # A port is assigned on a user's first start and stays theirs, so every
     # port already assigned to somebody else is off the table whether or not
@@ -426,7 +425,6 @@ def jupyter_start(
         handle = session_backend.start_session(
             username=current_user.username,
             gpu_indices=gpu_string,
-            port=port,
             token=token,
             base_url=base_url,
             memory_limit_mb=memory_limit_mb,
@@ -446,7 +444,6 @@ def jupyter_start(
                 current_user.unix_password_hash if settings.UNIFIED_PASSWORD else None
             ),
             disk_quota_mb=quota.disk_quota_mb(current_user),
-            backend=backend,
             image=chosen_image,
             reserved_ssh_ports=reserved_ports,
             preferred_ssh_port=session.ssh_port,
@@ -467,7 +464,7 @@ def jupyter_start(
                    "failing, contact an administrator.",
         )
 
-    if handle.get("pid") is None and not handle.get("container_id"):
+    if not handle.get("container_id"):
         session.status = models.SessionStatus.error
         db.add(session)
         db.commit()
@@ -479,7 +476,6 @@ def jupyter_start(
                    "failing, contact an administrator.",
         )
 
-    session.pid = handle.get("pid")
     session.container_id = handle.get("container_id")
     session.port = handle.get("port", port)
     session.image = handle.get("image")
@@ -488,32 +484,31 @@ def jupyter_start(
 
     # Wait until Jupyter actually answers so the UI can truthfully say
     # "Running".  This blocks only this worker thread.
-    if backend == "container":
-        ready = container_manager.wait_until_running(
-            container_manager.container_name(current_user.username),
-            base_url=session.base_url,
-            token=token,
+    ready = container_manager.wait_until_running(
+        container_manager.container_name(current_user.username),
+        base_url=session.base_url,
+        token=token,
+    )
+    if not ready:
+        # Keep the startup output for whoever has to diagnose it, but do
+        # not hand a wall of infrastructure logs to the person who just
+        # wanted to open a notebook.
+        logger.error(
+            "Workspace for %r did not become ready. Startup output:\n%s",
+            current_user.username,
+            container_manager.get_container_logs(
+                container_manager.container_name(current_user.username), tail=30
+            ) or "(none)",
         )
-        if not ready:
-            # Keep the startup output for whoever has to diagnose it, but do
-            # not hand a wall of infrastructure logs to the person who just
-            # wanted to open a notebook.
-            logger.error(
-                "Workspace for %r did not become ready. Startup output:\n%s",
-                current_user.username,
-                container_manager.get_container_logs(
-                    container_manager.container_name(current_user.username), tail=30
-                ) or "(none)",
-            )
-            session.status = models.SessionStatus.error
-            db.add(session)
-            db.commit()
-            db.refresh(session)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Your workspace did not finish starting in time. Please try "
-                       "again. If it keeps failing, contact an administrator.",
-            )
+        session.status = models.SessionStatus.error
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Your workspace did not finish starting in time. Please try "
+                   "again. If it keeps failing, contact an administrator.",
+        )
 
     session.status = models.SessionStatus.running
     session.last_activity = datetime.utcnow()
@@ -526,12 +521,12 @@ def jupyter_start(
 
     usage.open_record(
         db, current_user, gpu_indices=gpu_string,
-        image=session.image, backend=backend, cpu_cores=cpu_cores or 0.0,
+        image=session.image, backend="container", cpu_cores=cpu_cores or 0.0,
     )
     audit.record(
         db, "session.start", actor=current_user.username,
         target=current_user.username,
-        detail=f"gpus={gpu_string or 'none'} backend={backend} image={session.image}",
+        detail=f"gpus={gpu_string or 'none'} image={session.image}",
         ip_address=audit.client_ip(request), commit=False,
     )
     db.commit()
@@ -561,9 +556,7 @@ def jupyter_stop(
     live = metrics.for_user(current_user.username) or {}
     peak = (live.get("memory") or {}).get("used_mb")
 
-    session_backend.stop_session(
-        current_user.username, session.pid, session.container_id
-    )
+    session_backend.stop_session(current_user.username, session.container_id)
 
     session.pid = None
     session.container_id = None
@@ -597,7 +590,7 @@ def ssh_info(
     db: Session = Depends(get_db),
 ):
     """SSH connection info for the user's running container (owner only)."""
-    if not settings.SSH_ENABLED or session_backend.active_backend() != "container":
+    if not settings.SSH_ENABLED:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="SSH access is not available on this platform.",
@@ -716,11 +709,9 @@ def set_ssh_key(
     # from its environment at creation time, so without this a key added after
     # starting a session did nothing until the next restart, the user just
     # kept getting a password prompt.
-    applied_live = False
-    if session_backend.active_backend() == "container":
-        applied_live = container_manager.install_authorized_keys(
-            current_user.username, key or None
-        )
+    applied_live = container_manager.install_authorized_keys(
+        current_user.username, key or None
+    )
 
     if key:
         message = (

@@ -85,8 +85,8 @@ class User(Base):
     gpu_hours_quota = Column(Float, nullable=True)
     # CPU core-hour budget for the same period; 0/None = unlimited.  Charged
     # as wall-clock x cores allocated, to workspaces and jobs alike.  This is
-    # the CPU budget the container backend enforces; GpuAssignment.
-    # cpu_limit_seconds below is an RLIMIT_CPU ceiling the process backend
+    # the CPU budget the platform enforces; GpuAssignment.
+    # cpu_limit_seconds below is an RLIMIT_CPU ceiling the old process backend
     # applies to one process tree, which is a different thing entirely.
     cpu_hours_quota = Column(Float, nullable=True)
     # Preferred Jupyter image (validated against the platform allow-list).
@@ -173,12 +173,12 @@ class GpuAssignment(Base):
     # CPU cores the container may use (cgroup cpu.max).  This is the knob an
     # admin actually wants.  NULL = DEFAULT_CPU_CORES.
     cpu_cores         = Column(Float, nullable=True)
-    # Cumulative CPU-SECONDS ceiling (RLIMIT_CPU) for one process tree: past it
-    # the kernel kills the session.  PROCESS BACKEND ONLY, cgroups cannot
-    # express a cumulative budget, so the container backend ignores it and the
-    # admin form no longer offers it.  A per-user compute budget that works on
-    # both backends is User.cpu_hours_quota.  It used to be the only CPU field
-    # in the UI, so "4" meaning four cores was translated to 4/3600 → 0.25.
+    # Cumulative CPU-SECONDS ceiling (RLIMIT_CPU) for one process tree.  Dead
+    # since the process backend was removed: cgroups cannot express a
+    # cumulative budget, so nothing reads this and the admin form does not
+    # offer it.  The per-user compute budget that does work is
+    # User.cpu_hours_quota.  It used to be the only CPU field in the UI, so "4"
+    # meaning four cores was translated to 4/3600 → 0.25.
     cpu_limit_seconds = Column(Integer, nullable=True)
     # Most processes and threads the user may have at once (cgroup pids.max).
     # The fork-bomb ceiling, but also what a build with many parallel jobs or a
@@ -206,8 +206,10 @@ class JupyterSession(Base):
         nullable=False,
     )
     port          = Column(Integer, nullable=False)
-    pid           = Column(Integer, nullable=True)      # process backend
-    container_id  = Column(String(128), nullable=True)  # container backend
+    # pid belonged to the removed process backend.  The column stays so old
+    # rows still load; nothing writes it, and a row that has one is not running.
+    pid           = Column(Integer, nullable=True)
+    container_id  = Column(String(128), nullable=True)
     image         = Column(String(255), nullable=True)  # image actually used
     ssh_port      = Column(Integer, nullable=True)      # host port for sshd
     # Encrypted at rest (services.crypto), shown back to its owner only.

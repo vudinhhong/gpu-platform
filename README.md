@@ -108,6 +108,29 @@ Figure 1 of the article cited at the end of this file.
 > barrier; see [Batch jobs](#batch-jobs-sharing-gpus-by-time) for what that
 > does and does not buy you.
 
+### A machine without a GPU
+
+The stack deploys on a host with no NVIDIA GPU and no nvidia-container-toolkit,
+and a CPU-only machine is a perfectly reasonable thing to share this way — it is
+also how you try the interface out or work on the code.
+
+`deploy.sh` detects the missing GPU and changes nothing else: a workspace is one
+container per user either way, so it still gets `memory.max`, `cpu.max`, the PIDs
+cap, the I/O throttles, its own filesystem and its own SSH endpoint. Accounts, quotas, the batch queue (`submit --no-gpu`) and the whole web
+interface work. The only thing absent is the card: the container comes up with
+`NVIDIA_VISIBLE_DEVICES=void`, GPU assignment has nothing to assign, and a
+per-user memory, core or CPU-second limit is set on its own — see
+[Limits without a GPU](#limits-without-a-gpu). `.env` records the fact as
+`CPU_ONLY=true`, which is what stops the GPU guard below from treating every
+later deployment as a host that has lost its cards; `deploy.sh` clears it by
+itself if a GPU ever turns up.
+
+On Docker Desktop (macOS, Windows) the daemon runs inside a VM that only sees the
+paths shared with it, so the read-only `/home` mapping is skipped — pointing a
+user at an existing home directory is the one feature that will report the
+directory as not visible. Run `FORCE_HOME_MOUNT=1 ./deploy.sh` if you have shared
+the path with the VM and want it mapped anyway.
+
 ### Install nvidia-container-toolkit (Ubuntu/Debian)
 
 ```bash
@@ -151,17 +174,21 @@ whose `PRAGMA integrity_check` still says `ok`. The compose snapshot is the one
 that answers "was the GPU overlay actually applied", which is not a question you
 want to be reverse-engineering from a broken stack.
 
-**It refuses rather than downgrading.** If `.env` says
-`SESSION_BACKEND=container` and no usable GPU is detected, `deploy.sh` stops
-with an error instead of rewriting `.env` to `process`. A transient
-`nvidia-smi` failure is far likelier than a host losing its cards, and the
-downgrade was one-way: nothing put it back, so one bad reading turned a GPU
-platform into a CPU one until somebody read the code to find out why every
-workspace had stopped working. If the host really has no GPU any more, say so:
+**It refuses rather than guessing.** If no usable GPU is detected on a host that
+is not recorded as CPU-only, `deploy.sh` stops with an error. A transient
+`nvidia-smi` failure is far likelier than a host losing its cards, and deploying
+anyway would bring every workspace and every job up without the card its owner
+was assigned — a platform that looks broken in a way that points at the wrong
+layer. If the host really has no GPU, say so once:
 
 ```bash
 FORCE_CPU_ONLY=1 ./deploy.sh
 ```
+
+The answer is written to `.env` as `CPU_ONLY=true`, so the flag is not needed
+again, and `deploy.sh` clears it by itself if a GPU reappears. Nothing else
+changes: a container with no card attached keeps its own filesystem, its own SSH
+endpoint and every limit that is not a GPU.
 
 Once it is up, the [administrator guide](docs/admin-guide.md) walks through
 first sign-in, accounts, quotas and the day-to-day jobs; hand your users the
@@ -280,7 +307,6 @@ All configuration lives in `.env` (start from `.env.example`).
 
 | Variable | Default | Description |
 |---|---|---|
-| `SESSION_BACKEND` | `container` | `container` (one Docker container per user) or `process` (legacy subprocess) |
 | `JUPYTER_IMAGE` | `gpu-jupyter:latest` | Default per-user image |
 | `JUPYTER_IMAGES` | *(empty)* | Allow-list users may choose from: `PyTorch=my/pytorch:2.3,TF=my/tf:2.16`. Anything outside it is rejected |
 | `JUPYTER_DATA_DIR` | `/jupyter_data` | Per-user data root inside the backend |
@@ -291,9 +317,9 @@ All configuration lives in `.env` (start from `.env.example`).
 
 | Variable | Default | Description |
 |---|---|---|
-| `DEFAULT_MEMORY_LIMIT_MB` | `8192` | RAM cap per user (cgroup in container mode, rlimit in process mode) |
+| `DEFAULT_MEMORY_LIMIT_MB` | `8192` | RAM cap per user (cgroup `memory.max` on the workspace container) |
 | `DEFAULT_CPU_CORES` | `2` | CPU-core cap per user container |
-| `DEFAULT_CPU_LIMIT_SECONDS` | `0` | `RLIMIT_CPU`: CPU-seconds one process tree may burn before the kernel kills it. **Process backend only** — cgroups cannot express it, and the admin form no longer offers it. Set cores with the assignment's *CPU cores* field and a compute budget with `DEFAULT_CPU_HOURS_QUOTA` |
+| `DEFAULT_CPU_LIMIT_SECONDS` | `0` | `RLIMIT_CPU`: CPU-seconds one process tree may burn before the kernel kills it. **Inert** — cgroups cannot express a cumulative budget, and nothing has applied this since the process backend was removed. Set cores with the assignment's *CPU cores* field and a compute budget with `DEFAULT_CPU_HOURS_QUOTA` |
 | `CONTAINER_PIDS_LIMIT` | `512` | cgroup `pids.max` — the fork-bomb ceiling |
 | `DISK_READ_BPS_MB` / `DISK_WRITE_BPS_MB` | `150` / `80` | Hard per-container I/O ceilings (MB/s) |
 | `DISK_READ_IOPS` / `DISK_WRITE_IOPS` | `0` | Optional operation-count caps (useful on HDDs) |
@@ -1104,21 +1130,46 @@ for, where it landed, and a cancel button for reclaiming a card.
 
 ---
 
-## Session backends: `process` vs `container`
+## A workspace is a container
 
-| | `process` | `container` (recommended) |
-|---|---|---|
-| What runs | `jupyter lab` subprocess in the backend container | One Docker container per user |
-| GPU isolation | `CUDA_VISIBLE_DEVICES` + POSIX ACLs on `/dev/nvidia*` | **Docker device request by GPU UUID** (device cgroup) |
-| RAM / CPU limits | rlimits (address space, per process tree) | cgroups — real RSS, whole container |
-| Telemetry | limited | full `docker stats` |
-| SSH | not provisioned | per-user sshd |
-| Requirements | none extra | `/var/run/docker.sock` in the backend; `gpu-jupyter:latest` pre-built by `deploy.sh` |
+There is one way to run a workspace: a Docker container of its own, holding
+JupyterLab and an sshd, attached to the platform network and reachable only
+through the backend. Everything the platform promises a user rests on that —
+`memory.max` and `cpu.max` on the whole container rather than on one process,
+`pids.max`, the I/O throttles, a GPU pinned by UUID through a device cgroup, a
+filesystem nobody else can see, and `docker stats` for telemetry. It needs
+`/var/run/docker.sock` in the backend and `gpu-jupyter:latest` pre-built, both
+of which `deploy.sh` arranges.
 
-> `RLIMIT_AS`, which is all process mode has, is a poor RAM cap for CUDA
-> work. PyTorch reserves tens of gigabytes of *virtual* address space, so a
-> sensible-looking cap makes `torch.cuda.init()` fail instead of limiting real
-> memory. On a GPU host, use the container backend.
+There used to be a second backend, selected with `SESSION_BACKEND=process`,
+which ran `jupyter lab` as a subprocess inside the platform's own container. It
+was removed rather than repaired, because what it could not do was the one thing
+a session backend is for, which is keeping users apart:
+
+* **Every workspace shared one filesystem.** `JUPYTER_DATA_DIR/<user>` is created
+  0755 and nothing narrowed it, so any user could read every other user's
+  notebooks and data, their Jupyter log, and the `.jupyter` config holding the
+  argon2 hash of their account password. Probed on the reference host as an
+  arbitrary uid: the whole tree was readable. Worse, the uid a user's account got
+  was the next one `useradd` handed out, which eventually collided with the uid
+  owning `JUPYTER_DATA_DIR` itself — and the owner of a directory can delete what
+  is in it.
+* **Every workspace shared one PID and one network namespace.** `ps` showed other
+  users' command lines, and every other user's Jupyter was one TCP connection to
+  `127.0.0.1` away.
+* **The RAM cap was `RLIMIT_AS`**, an address-space ceiling per process rather
+  than `memory.max` on the workspace. It is also a poor fit for CUDA: PyTorch
+  reserves tens of gigabytes of *virtual* address space, so a sensible-looking
+  cap makes `torch.cuda.init()` fail instead of limiting real memory. There was
+  no `cpu.max`, no disk quota, no SSH and no image choice.
+
+Closing those holes means giving each user their own mount, PID and network
+namespace and moving the limits into cgroups, which is a description of a
+container runtime. Docker is already a dependency, so the platform uses it and
+does not carry a second, weaker answer beside it. `SESSION_BACKEND` and
+`JUPYTER_PORT_START`/`JUPYTER_PORT_END` are deleted from `.env` on the next
+`./deploy.sh`; a session the old backend started is reported stopped, and its
+owner presses **Start** once to get a container.
 
 ### GPUs that "detach after a while"
 
@@ -1185,7 +1236,7 @@ are full.
 
 ### SSH access to user containers
 
-With `SESSION_BACKEND=container` and `SSH_ENABLED=true`:
+With `SSH_ENABLED=true`:
 
 ```bash
 ssh -p <port> <username>@<server-ip>
@@ -1279,9 +1330,9 @@ spawn a process with a different value. The isolation here is layered:
 
 | Layer | Mechanism |
 |---|---|
-| GPU device access | Docker device request pinning GPU UUIDs (container backend) — kernel-level device cgroup. POSIX ACLs on `/dev/nvidia*` (process backend) |
+| GPU device access | Docker device request pinning GPU UUIDs — a kernel-level device cgroup, not an environment variable |
 | GPU visibility | `CUDA_VISIBLE_DEVICES`, renumbered from 0 inside the container |
-| RAM / CPU / fork bombs | cgroups `--memory`, `--cpus`, `pids.max`; rlimits in process mode |
+| RAM / CPU / fork bombs | cgroups `--memory`, `--cpus`, `pids.max` on the whole container |
 | Disk | Per-container BPS/IOPS ceilings, blkio weight, per-user disk quota |
 | Process identity | Unprivileged per-user account inside the container; `no-new-privileges` |
 | Network | Jupyter is never published; only the backend reaches it, by Docker DNS |
@@ -1397,8 +1448,9 @@ The API returns the container's own last 30 log lines in the error, and the
 dashboard shows them. Common causes:
 
 * `gpu-jupyter:latest` missing → `./deploy.sh` (or the documented `docker build`).
-  The platform never builds an image inside a request; it falls back to the
-  process backend and logs loudly.
+  The platform never builds an image inside a request, and it no longer falls
+  back to running the workspace as a bare process: it refuses with a 503 and
+  logs which image it wanted.
 * `JUPYTER_DATA_HOST_DIR` pointing somewhere that does not exist on this host.
 * Disk, GPU-hour or CPU-hour budget exceeded → the 429 names which one and
   when it refills.
@@ -1651,8 +1703,8 @@ is usually what you want when the behaviour surprises you later.
   startup instead of stopping every session on shutdown. Previously **every
   platform update killed every running notebook**.
 * Selectable Jupyter images from a server-side allow-list.
-* `pids.max` on user containers — the container backend had no fork-bomb
-  ceiling, unlike the process backend.
+* `pids.max` on user containers — until then there was no fork-bomb ceiling on
+  a workspace container.
 
 ### Deployment
 
@@ -1785,9 +1837,9 @@ appeared in JupyterLab, and JupyterLab could not save a notebook
 ### CPU limits that meant a quarter of what was asked
 
 The assignment form's only CPU field was *CPU limit (seconds)* — an
-`RLIMIT_CPU` budget that belongs to the process backend. The container backend
-had no core setting of its own, so it derived one: `seconds / 3600`, floored at
-0.25. An administrator setting **4**, meaning four cores, got a workspace
+`RLIMIT_CPU` budget belonging to the process backend that ran a workspace as a
+subprocess. A workspace container had no core setting of its own, so it derived
+one: `seconds / 3600`, floored at 0.25. An administrator setting **4**, meaning four cores, got a workspace
 throttled to **0.25 cores**, while the form still read 4. Found on the reference
 host, where `cpu.max` was `25000 100000`.
 
@@ -1798,13 +1850,13 @@ a session instantly), so it is moved to `cpu_cores`. Both assignments on the
 reference host were rescued that way.
 
 `cpu_limit_seconds` itself is gone from the admin form. It is an `RLIMIT_CPU`
-ceiling on one process tree, only the process backend ever applied it, and
-every deployment runs the container backend, so the field was a number an
-administrator could type, save and see rendered back while nothing enforced it.
-What people wanted from it, a cap on how much compute somebody may consume, is
-now `cpu_hours_quota`: a CPU core-hour budget per period that sits beside the
-GPU-hour one and is enforced the same way. The column and the process-backend
-behaviour stay, unadvertised.
+ceiling on one process tree, only the process backend ever applied it, and that
+backend has since been removed, so the field was a number an administrator could
+type, save and see rendered back while nothing enforced it. What people wanted
+from it, a cap on how much compute somebody may consume, is now
+`cpu_hours_quota`: a CPU core-hour budget per period that sits beside the
+GPU-hour one and is enforced the same way. The column stays so old assignments
+still load.
 
 ### A budget on the queue, not on somebody's desk
 
@@ -1968,8 +2020,7 @@ restored with a fresh workspace; if something already occupies the name, the
 archive is left alone rather than overwriting it.
 
 **Emptying the trash** is the only destructive step: it deletes the account,
-its history and its archived files, removes the dedicated OS account, and
-finally frees the username. `Admin → Trash` also lists workspace directories
+its history and its archived files, and finally frees the username. `Admin → Trash` also lists workspace directories
 that no account owns at all — the ones the old delete left behind — with their
 size, so they can be removed from the UI instead of needing root.
 
@@ -2144,6 +2195,36 @@ there would sort the page rather than the history. A status, a name search and
 an ordering are query parameters, the count the pager is built from follows the
 filter, and every sort carries the job id as a second key, since a column with
 ties would otherwise shuffle rows between pages under the poll.
+
+### The second session backend, removed
+
+A workspace could be started two ways, chosen by `SESSION_BACKEND`: a container
+of its own, or a `jupyter lab` subprocess inside the platform's own container.
+The second one shipped as the default in `config.py` and was what `deploy.sh`
+wrote on any host without a GPU, which is how a CPU-only machine ended up
+sharing one filesystem, one PID namespace and one network namespace between
+every user on it. Probed as an arbitrary uid inside the backend container: the
+whole of `/jupyter_data` was listable and every other user's workspace readable,
+including the `.jupyter` config that holds the argon2 hash of their account
+password. The memory cap was `RLIMIT_AS` rather than `memory.max`, there was no
+disk quota, no `cpu.max`, no SSH and no image choice, and half the platform's
+features were already switched off in that mode with an `active_backend() !=
+"container"` test.
+
+It is gone rather than patched, because the missing pieces are a mount, a PID
+and a network namespace plus cgroup limits, which together are a container
+runtime. See [A workspace is a container](#a-workspace-is-a-container) for what
+was actually wrong with it. `services/jupyter_manager.py` and
+`services/resource_limits.py` are deleted, the dispatch in
+`services/session_backend.py` with them, and `SESSION_BACKEND` and
+`JUPYTER_PORT_START`/`JUPYTER_PORT_END` are dropped from `.env` on the next
+`./deploy.sh`. The `pid` column stays so old rows still load; a session row that
+has one is reported stopped, and its owner presses **Start** to get a container.
+
+One behaviour went with it that was not obvious: a workspace whose image was
+missing used to *fall back* to the process backend, so a deployment that had
+lost `gpu-jupyter:latest` quietly moved every user onto the weaker path. Start
+now refuses with a 503 naming the image, and a test holds that line.
 
 ### Verification on the reference host (2× RTX 4090, cgroup v2, default runtime `nvidia`)
 

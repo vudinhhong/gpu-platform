@@ -188,7 +188,7 @@ def remove_directory(name: str) -> bool:
 def stop_everything(db, user) -> Dict[str, Any]:
     """Stop and remove every container and job belonging to *user*."""
     import models
-    from services import container_manager, jobs as job_service, resource_limits
+    from services import container_manager, jobs as job_service
     from services import session_backend, usage
 
     result = {"jobs_cancelled": [], "containers_removed": 0, "session_stopped": False}
@@ -211,7 +211,7 @@ def stop_everything(db, user) -> Dict[str, Any]:
     session = user.jupyter_session
     if session is not None:
         try:
-            session_backend.stop_session(user.username, session.pid, session.container_id)
+            session_backend.stop_session(user.username, session.container_id)
             result["session_stopped"] = True
         except Exception as exc:  # noqa: BLE001 (deletion must not be blockable)
             logger.warning("Could not stop session for %r: %s", user.username, exc)
@@ -223,11 +223,6 @@ def stop_everything(db, user) -> Dict[str, Any]:
     result["containers_removed"] = container_manager.remove_user_containers(user.username)
 
     usage.close_open_records(db, user, reason="deleted", commit=False)
-
-    try:
-        resource_limits.revoke_all_device_acl(user.username)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not revoke device ACLs for %r: %s", user.username, exc)
 
     return result
 
@@ -333,18 +328,9 @@ def purge(db, user, actor: str, ip_address: Optional[str] = None) -> Dict[str, A
     """Delete a trashed user for good, with their archived workspace."""
     from services import audit, workspaces
 
-    from services import resource_limits
-
     space = workspaces.for_user(user)
     removed = remove_directory(user.archived_workspace) if user.archived_workspace else False
     username = user.username
-
-    # The dedicated OS account outlives a trashed user so a restore keeps the
-    # same uid; once the account is gone for good, so should it be.
-    try:
-        resource_limits.remove_os_user(username)
-    except Exception as exc:  # noqa: BLE001 (never block the delete)
-        logger.warning("Could not remove the OS account for %r: %s", username, exc)
 
     audit.record(
         db, "user.purge", actor=actor, target=username,

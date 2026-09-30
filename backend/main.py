@@ -11,7 +11,6 @@ Run locally with::
 import asyncio
 import logging
 import os
-import stat
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -27,36 +26,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-def _lock_down_gpu_devices() -> None:
-    """Remove world access to /dev/nvidia* so unauthorised OS users cannot open
-    GPUs directly.
-
-    Only meaningful for the *process* backend, where every user's Jupyter shares
-    this host's device nodes.  With the container backend the Docker device
-    cgroup is the boundary and /dev/nvidia* is a read-only mount injected by the
-    nvidia runtime, attempting the chmod there only produced a wall of
-    misleading EROFS warnings at every boot.
-    """
-    if (settings.SESSION_BACKEND or "process").lower() == "container":
-        logger.debug("Container backend: GPU device ACLs are handled by Docker.")
-        return
-    try:
-        for name in sorted(os.listdir("/dev")):
-            if not name.startswith("nvidia"):
-                continue
-            path = f"/dev/{name}"
-            try:
-                mode = os.stat(path).st_mode
-                new_mode = mode & ~(stat.S_IWOTH | stat.S_IROTH | stat.S_IXOTH | stat.S_IWGRP)
-                if new_mode != mode:
-                    os.chmod(path, new_mode)
-                    logger.info("Locked down GPU device %s (removed world/group access)", path)
-            except OSError as exc:
-                logger.warning("Could not chmod %s: %s", path, exc)
-    except OSError:
-        pass  # no nvidia devices here
 
 
 def _secure_data_directory() -> None:
@@ -113,8 +82,6 @@ def _self_heal_pass() -> None:
     """Restart user containers that died unexpectedly (incl. OOM kills)."""
     from services import session_backend
 
-    if session_backend.active_backend() != "container":
-        return
     db = SessionLocal()
     try:
         running = (
@@ -183,10 +150,7 @@ def _sync_authorized_keys() -> None:
     was down) are only in the database; their owners get a password prompt with
     no clue why.  One pass at startup makes the filesystem match the database.
     """
-    from services import container_manager, session_backend
-
-    if session_backend.active_backend() != "container":
-        return
+    from services import container_manager
 
     db = SessionLocal()
     try:
@@ -233,7 +197,6 @@ async def lifespan(_app: FastAPI):
     models.Base.metadata.create_all(bind=engine)
 
     _warn_on_weak_config()
-    _lock_down_gpu_devices()
     _secure_data_directory()
 
     loop = asyncio.get_running_loop()
@@ -270,7 +233,7 @@ async def lifespan(_app: FastAPI):
         try:
             for session in db.query(models.JupyterSession).all():
                 session_backend.stop_session(
-                    session.user.username, session.pid, session.container_id
+                    session.user.username, session.container_id
                 )
                 session.status = models.SessionStatus.stopped
                 session.pid = None

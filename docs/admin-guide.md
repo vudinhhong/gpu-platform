@@ -395,7 +395,7 @@ against the cgroup files themselves. `scripts/README.md` says how to run it.
 
 | Symptom | Likely cause | What to do |
 |---|---|---|
-| Workspaces will not start, backend logs mention the image | The workspace image is missing | `./deploy.sh` rebuilds it. Until then sessions fall back to a CPU-only process backend |
+| Workspaces will not start, backend logs mention the image | The workspace image is missing | `./deploy.sh` rebuilds it. Until then Start is refused with a 503: a workspace is a container, and there is nothing weaker to fall back to |
 | A container sees every GPU | It was created without a device request, and the host's default runtime is `nvidia` | Check the assignment, then Admin → Resources, which reads back what the daemon applied |
 | 504 from your own nginx, but the port answers | A default-DROP OUTPUT policy on the host blocking docker-proxy | `sudo bash scripts/host_firewall_setup.sh` |
 | The audit log shows an IP that cannot be right | Your host nginx passes `X-Forwarded-For` on from the client instead of replacing it, so the caller chooses what gets recorded | In each `location` of your server block, `proxy_set_header X-Forwarded-For $remote_addr;` (not `$proxy_add_x_forwarded_for`), then `sudo nginx -t && sudo systemctl reload nginx`. The shipped `nginx/host/gpu-platform.conf` already does this |

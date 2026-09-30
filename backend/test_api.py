@@ -20,7 +20,6 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB}"
 os.environ["JUPYTER_DATA_DIR"] = tempfile.mkdtemp(prefix="gpu_jupyter_test_")
 # The suite has no GPUs; simulated ones keep the assignment paths exercisable.
 os.environ["ALLOW_MOCK_GPU"] = "true"
-os.environ["SESSION_BACKEND"] = "process"
 os.environ["SECRET_KEY"] = "test-secret-key-not-used-in-production-0123456789"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -32,9 +31,9 @@ import main  # noqa: E402
 import models  # noqa: E402
 from database import SessionLocal, engine  # noqa: E402
 from routers import proxy  # noqa: E402
-from services import jupyter_manager, ratelimit, session_backend  # noqa: E402
+from services import container_manager, ratelimit, session_backend  # noqa: E402
 
-FAKE_PID = 999_001
+FAKE_CONTAINER_ID = "f" * 64
 ADMIN_PW = "admin123"
 # Every password created through the API must satisfy the platform policy
 # (>= 10 chars, a letter and a digit).
@@ -45,14 +44,33 @@ ALICE_PW = "alice-pass1"
 def client():
     models.Base.metadata.create_all(bind=engine)
 
-    # Force the process backend and monkeypatch the process manager so tests
-    # never spawn real Jupyter servers or Docker containers.
-    session_backend._backend = lambda: "process"
-    jupyter_manager.start_jupyter = lambda *a, **kw: FAKE_PID
-    jupyter_manager.is_process_alive = lambda pid: pid == FAKE_PID
-    jupyter_manager.stop_jupyter = lambda pid: True
-    jupyter_manager.find_available_port = lambda: 8177
-    jupyter_manager.generate_token = lambda: "testtoken" * 8
+    # Stand in for Docker so the suite never needs a daemon: the session seam
+    # answers as if the container started, and the container manager's own
+    # entry points are stubbed where an endpoint reaches past that seam.
+    session_backend.start_session = lambda username, **kw: {
+        "container_id": FAKE_CONTAINER_ID,
+        "name": f"gpu-jupyter-{username}",
+        "image": kw.get("image") or "gpu-jupyter:latest",
+        "port": 8888,
+        "ssh_port": kw.get("preferred_ssh_port") or 2222,
+        "ssh_password": None,
+    }
+    session_backend.is_alive = lambda username, container_id: bool(container_id)
+    session_backend.stop_session = lambda username, container_id=None: True
+    session_backend.generate_token = lambda: "testtoken" * 8
+    session_backend.get_state = lambda username: None
+    session_backend.get_logs = lambda username, tail=40: ""
+    session_backend.wait_for_ready = lambda username, timeout=60: True
+    session_backend.self_heal = lambda sessions: []
+
+    container_manager.resolve_image = lambda requested=None: "gpu-jupyter:latest"
+    container_manager.image_exists = lambda image: True
+    container_manager.wait_until_running = lambda *a, **kw: True
+    container_manager.get_container_logs = lambda *a, **kw: ""
+    container_manager.install_authorized_keys = lambda username, key: bool(key)
+    container_manager.update_container_password = lambda username, hashed: True
+    container_manager.write_jupyter_auth_config = lambda *a, **kw: True
+    container_manager.remove_user_containers = lambda username: 0
 
     # Never actually proxy anywhere.
     proxy._find_session = lambda username: None
@@ -252,7 +270,7 @@ def test_jupyter_lifecycle(client):
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["status"] == "running"
-    assert body["pid"] == FAKE_PID
+    assert body["container_id"] == FAKE_CONTAINER_ID
     assert body["base_url"] == "/jupyter/admin/"
     # The owner gets the real token back even though it is encrypted at rest.
     assert body["token"] == "testtoken" * 8
@@ -265,6 +283,22 @@ def test_jupyter_lifecycle(client):
     res = client.post("/api/user/me/jupyter/stop", headers=_auth(token), json={})
     assert res.status_code == 200
     assert res.json()["status"] == "stopped"
+
+
+def test_a_missing_workspace_image_refuses_instead_of_falling_back(client, monkeypatch):
+    """No image, no workspace.
+
+    This used to fall back to a second backend that ran Jupyter as a subprocess
+    beside every other user's, so a missing image quietly cost everyone their
+    isolation.  That backend is gone; the only honest answer is to refuse.
+    """
+    token = _login(client, "admin", ADMIN_PW)
+    client.post("/api/user/me/jupyter/stop", headers=_auth(token), json={})
+
+    monkeypatch.setattr(container_manager, "image_exists", lambda image: False)
+    res = client.post("/api/user/me/jupyter/start", headers=_auth(token), json={})
+    assert res.status_code == 503, res.text
+    assert "image" in res.json()["detail"].lower()
 
 
 def test_session_secrets_are_encrypted_at_rest(client):

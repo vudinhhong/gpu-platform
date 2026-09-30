@@ -231,9 +231,8 @@ def _hop_by_hop_headers(headers) -> dict:
 
 
 def _upstream(session: SessionView, username: str) -> str:
-    """Base URL of the user's Jupyter, honouring how the session was launched."""
-    backend_name = "container" if session.container_id else "process"
-    return session_backend.target_base_url(username, session.port, backend_name)
+    """Base URL of the user's Jupyter container (Docker-network DNS)."""
+    return session_backend.target_base_url(username)
 
 
 # ---------------------------------------------------------------------------
