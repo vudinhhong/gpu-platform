@@ -923,9 +923,17 @@ def _elapsed_seconds(job: "models.Job", now: Optional[datetime] = None) -> int:
 
     A paused job's clock is stopped, so what it shows is what it had run when
     it was frozen, which is also what its runtime limit is measured against.
+
+    ``runtime_seconds`` carries the stretches already booked by ``_book_segment``;
+    what has to be added to it is the live stretch, the one that began at
+    ``started_at`` and has not been booked yet.  A finished job has no live
+    stretch: ``_close`` books the last one and deliberately leaves ``started_at``
+    alone, since it is the record of when the job last started.  Adding it again
+    once the job had ended therefore counted the final stretch twice and reported
+    exactly double the runtime for every completed job.
     """
     total = float(job.runtime_seconds or 0.0)
-    if job.started_at:
+    if job.started_at and job.finished_at is None:
         total += max(0.0, ((now or datetime.utcnow()) - job.started_at).total_seconds())
     return int(total)
 

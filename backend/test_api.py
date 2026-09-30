@@ -1041,6 +1041,55 @@ def test_deactivating_a_user_returns_their_ssh_port(client):
         db.close()
 
 
+def test_finished_job_runtime_is_not_counted_twice():
+    """A finished job must report the time it ran, not twice the time it ran.
+
+    ``runtime_seconds`` holds what ``_book_segment`` has already charged, and
+    ``_close`` charges the final stretch and then leaves ``started_at`` alone as
+    the record of when the job last started.  Adding the span from
+    ``started_at`` on top of that doubled every completed job: a 30-minute run
+    was served to the dashboard as 3,612 seconds and rendered as "1h 0m".
+    """
+    from datetime import datetime, timedelta
+
+    from services import jobs as job_service
+
+    start = datetime(2026, 9, 30, 7, 18, 45)
+    half_hour = 1806.0
+
+    finished = models.Job(
+        user_id=1, username="x", script="s.sh", workdir="",
+        status=models.JobStatus.succeeded,
+        started_at=start, finished_at=start + timedelta(seconds=half_hour),
+        runtime_seconds=half_hour,
+    )
+    assert job_service._elapsed_seconds(finished, finished.finished_at) == 1806
+
+    # Still running: nothing is booked yet, so the live stretch is all there is.
+    running = models.Job(
+        user_id=1, username="x", script="s.sh", workdir="",
+        status=models.JobStatus.running, started_at=start, runtime_seconds=0.0,
+    )
+    assert job_service._elapsed_seconds(
+        running, start + timedelta(seconds=half_hour)) == 1806
+
+    # Resumed after a pause: booked stretches plus the live one.
+    resumed = models.Job(
+        user_id=1, username="x", script="s.sh", workdir="",
+        status=models.JobStatus.running, started_at=start,
+        runtime_seconds=600.0,
+    )
+    assert job_service._elapsed_seconds(
+        resumed, start + timedelta(seconds=300)) == 900
+
+    # Frozen: the clock is stopped, and started_at was cleared when it froze.
+    paused = models.Job(
+        user_id=1, username="x", script="s.sh", workdir="",
+        status=models.JobStatus.paused, started_at=None, runtime_seconds=900.0,
+    )
+    assert job_service._elapsed_seconds(paused) == 900
+
+
 def test_home_mapping_is_validated_not_guessed(client, tmp_path):
     """A mapping must be named by an administrator and must stay inside the
     configured root.  Inferring it from the username would hand a host account
