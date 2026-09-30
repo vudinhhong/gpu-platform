@@ -38,7 +38,7 @@ setting has a longer story behind it, there is a pointer.
 | Docker | Engine 24 or newer, with the Compose v2 plugin |
 | GPU | NVIDIA driver 525 or newer and `nvidia-container-toolkit`, if there are cards. The platform runs fine on a CPU-only host |
 | Disk | Around 15 GB for the workspace image, plus whatever your users' files will take |
-| Ports | One HTTP port for the web tier, and a range for per-user SSH (2222 upwards by default) |
+| Ports | One HTTP port for the web tier, and a range for per-user SSH (2222 upwards by default). Each user is assigned one port on their first workspace start and keeps it; deactivating or trashing the account returns it to the pool |
 
 Check the GPU side before you start, because this is what the platform depends
 on and it is easy to have half of it:

@@ -407,14 +407,16 @@ def jupyter_start(
             backend = "process"
             chosen_image = None
 
-    # Ports already handed to other users must not be offered again.
+    # A port is assigned on a user's first start and stays theirs, so every
+    # port already assigned to somebody else is off the table whether or not
+    # their workspace happens to be running right now.  Only deactivating or
+    # trashing an account returns its port to the pool.
     reserved_ports = [
         row[0]
         for row in db.query(models.JupyterSession.ssh_port)
         .filter(
             models.JupyterSession.ssh_port.isnot(None),
             models.JupyterSession.user_id != current_user.id,
-            models.JupyterSession.status == models.SessionStatus.running,
         )
         .all()
     ]
@@ -447,6 +449,7 @@ def jupyter_start(
             backend=backend,
             image=chosen_image,
             reserved_ssh_ports=reserved_ports,
+            preferred_ssh_port=session.ssh_port,
             user=current_user,
         )
     except Exception as exc:  # noqa: BLE001
@@ -564,7 +567,12 @@ def jupyter_stop(
 
     session.pid = None
     session.container_id = None
-    session.ssh_port = None
+    # ssh_port is deliberately kept.  It is the port this workspace asks for
+    # next time, and an SSH client keys known_hosts by host *and* port: handing
+    # somebody a different port on the next start makes their client report that
+    # the host key changed, which reads as an attack and not as a restart.
+    # Nothing mistakes a remembered port for a live one -- every reader checks
+    # the session status first.
     session.ssh_password = None
     session.status = models.SessionStatus.stopped
     session.last_activity = datetime.utcnow()

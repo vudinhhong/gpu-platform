@@ -165,6 +165,11 @@ async def update_user(
                 detail="Cannot deactivate the built-in admin account.",
             )
         user.is_active = payload.is_active
+        if payload.is_active is False and user.jupyter_session is not None:
+        # An SSH port belongs to its owner across restarts, so the pool only
+        # takes one back when the account can no longer use it.  Leaving it
+        # assigned here would hold a port nobody can reach.
+            user.jupyter_session.ssh_port = None
         # Deactivation used to leave the user working for up to a full token
         # lifetime; revoking cuts them off on their next request.
         revoke_tokens(user)
@@ -682,7 +687,12 @@ def stop_user_session(
 
     session.pid = None
     session.container_id = None
-    session.ssh_port = None
+    # ssh_port is deliberately kept.  It is the port this workspace asks for
+    # next time, and an SSH client keys known_hosts by host *and* port: handing
+    # somebody a different port on the next start makes their client report that
+    # the host key changed, which reads as an attack and not as a restart.
+    # Nothing mistakes a remembered port for a live one -- every reader checks
+    # the session status first.
     session.ssh_password = None
     session.status = models.SessionStatus.stopped
     db.add(session)

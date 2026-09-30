@@ -270,6 +270,11 @@ def soft_delete(db, user, actor: str, ip_address: Optional[str] = None) -> Dict[
     user.archived_workspace = archive_workspace(user)
 
     user.is_active = False
+    if user.jupyter_session is not None:
+        # An SSH port belongs to its owner across restarts, so the pool only
+        # takes one back when the account can no longer use it.  Leaving it
+        # assigned here would hold a port nobody can reach.
+        user.jupyter_session.ssh_port = None
     user.deleted_at = datetime.utcnow()
     user.job_token_hash = None   # the submit/queue/cancel commands stop working
     revoke_tokens(user)          # every issued token dies immediately

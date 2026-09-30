@@ -962,6 +962,85 @@ def test_fair_share_charges_a_running_batch_job_before_it_ends(client):
         db.close()
 
 
+def test_ssh_port_belongs_to_the_workspace_it_was_given_to(monkeypatch):
+    """A port is assigned once and stays with its workspace.
+
+    An SSH client keys ``known_hosts`` by host *and* port, so moving a workspace
+    to another port makes every client that has ever connected announce that the
+    host key has changed -- indistinguishable, from the user's seat, from a
+    machine-in-the-middle, and not clearable by reconnecting.  "Lowest free port
+    wins" handed a stopped workspace's port to whoever started next, which is
+    exactly how two users end up trading fingerprints.
+    """
+    from services import container_manager as cm
+
+    start = cm.settings.SSH_PORT_START
+    monkeypatch.setattr(cm, "published_host_ports", lambda: set())
+
+    # The assigned port comes first, even though it is not the lowest free one.
+    assert cm.ssh_port_candidates(preferred=start + 7)[0] == start + 7
+
+    # A port assigned to somebody else is never offered, whether or not their
+    # workspace is running: that is what makes stopping one safe.
+    order = cm.ssh_port_candidates(reserved=[start, start + 1])
+    assert start not in order and start + 1 not in order
+    assert order[0] == start + 2
+
+    # A workspace with no port yet takes the lowest one left.
+    assert cm.ssh_port_candidates()[0] == start
+
+    # An assigned port that something outside the platform has taken must not
+    # stop the workspace coming up; it starts elsewhere and records that.
+    monkeypatch.setattr(cm, "published_host_ports", lambda: {start + 7})
+    order = cm.ssh_port_candidates(preferred=start + 7)
+    assert start + 7 not in order and order[0] == start
+
+
+def test_deactivating_a_user_returns_their_ssh_port(client):
+    """The pool takes a port back only when the account can no longer use it.
+
+    Held forever it would be a port nobody can reach; released on every stop it
+    would be a port somebody else gets, which is the fingerprint clash this all
+    exists to prevent.  Deactivation is the line between the two.
+    """
+    from auth import get_password_hash
+
+    token = _login(client, "admin", ADMIN_PW)
+    db = SessionLocal()
+    try:
+        user = models.User(username="porthold", email="porthold@local",
+                           hashed_password=get_password_hash("x"))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        db.add(models.JupyterSession(
+            user_id=user.id, port=9911, token="x",
+            base_url=f"/jupyter/{user.username}/",
+            ssh_port=2299, status=models.SessionStatus.stopped,
+        ))
+        db.commit()
+        user_id = user.id
+    finally:
+        db.close()
+
+    res = client.put(f"/api/admin/users/{user_id}", headers=_auth(token),
+                     json={"is_active": False})
+    assert res.status_code == 200
+
+    db = SessionLocal()
+    try:
+        session = (
+            db.query(models.JupyterSession)
+            .filter(models.JupyterSession.user_id == user_id)
+            .one()
+        )
+        assert session.ssh_port is None, (
+            "a deactivated account must give its SSH port back to the pool"
+        )
+    finally:
+        db.close()
+
+
 def test_home_mapping_is_validated_not_guessed(client, tmp_path):
     """A mapping must be named by an administrator and must stay inside the
     configured root.  Inferring it from the username would hand a host account

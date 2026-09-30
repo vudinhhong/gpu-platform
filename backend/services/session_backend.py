@@ -50,6 +50,7 @@ def start_session(
     backend: Optional[str] = None,
     image: Optional[str] = None,
     reserved_ssh_ports: Optional[list] = None,
+    preferred_ssh_port: Optional[int] = None,
     user=None,
     max_processes: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -82,6 +83,7 @@ def start_session(
             disk_quota_mb=disk_quota_mb,
             image=image,
             reserved_ssh_ports=reserved_ssh_ports,
+            preferred_ssh_port=preferred_ssh_port,
             max_processes=max_processes,
         )
         # Inside the container Jupyter always listens on CONTAINER_PORT; the

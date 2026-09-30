@@ -1164,7 +1164,12 @@ ssh -p <port> <username>@<server-ip>
 ```
 
 * Port and per-session password appear on the dashboard once the session runs.
-  The port comes from `SSH_PORT_START`–`SSH_PORT_END` and changes on restart.
+  The port comes from `SSH_PORT_START`–`SSH_PORT_END` and is **assigned on the
+  user's first start and then kept**: stopping and restarting a workspace gets
+  the same port back, and ports already assigned are not offered to anybody
+  else. A client keys `known_hosts` by host *and* port, so a moving port reads
+  to the user as `REMOTE HOST IDENTIFICATION HAS CHANGED`. The pool takes a port
+  back only when the account is deactivated or moved to the trash.
 * **Public keys** — paste an OpenSSH key on the dashboard; it is installed at
   the next session start. Password auth remains as fallback.
 * **Hardening** (`sshd_tail.conf`): `DisableForwarding yes` blocks tunnelling

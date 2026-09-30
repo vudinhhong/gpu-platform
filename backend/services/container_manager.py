@@ -158,14 +158,40 @@ def published_host_ports() -> set:
     return used
 
 
-def ssh_port_candidates(reserved: Optional[Iterable[int]] = None) -> List[int]:
-    """Free host ports in the configured SSH range, best candidate first."""
+def ssh_port_candidates(
+    reserved: Optional[Iterable[int]] = None,
+    preferred: Optional[int] = None,
+) -> List[int]:
+    """Free host ports in the configured SSH range, best candidate first.
+
+    A workspace keeps the port it was first given.  An SSH client keys
+    ``known_hosts`` by host *and* port, so moving a workspace to another port
+    makes every client that has ever connected announce that the host key has
+    changed -- from the user's seat indistinguishable from a
+    machine-in-the-middle, and not clearable by reconnecting.  The host keys are
+    already persistent (``docker-entrypoint.sh`` keeps them in a bind mount);
+    the port is the other half of that identity.
+
+    *preferred* is the port already assigned to this workspace, and goes first.
+    *reserved* is every port assigned to somebody else, whether or not their
+    workspace is running: a port belongs to its owner until the account is
+    deactivated or moved to the trash, so stopping a workspace never costs it
+    its port and never hands it to a neighbour who starts in the meantime.
+
+    The preferred port leads the list rather than being the only candidate: if
+    something outside the platform has taken it the workspace still starts, on a
+    port that is then recorded as its new one.
+    """
     taken = published_host_ports() | {int(p) for p in (reserved or []) if p}
-    return [
+    free = [
         port
         for port in range(settings.SSH_PORT_START, settings.SSH_PORT_END + 1)
         if port not in taken
     ]
+    want = int(preferred) if preferred else None
+    if want is not None and want in free:
+        return [want] + [p for p in free if p != want]
+    return free
 
 
 # ---------------------------------------------------------------------------
@@ -493,6 +519,7 @@ def start_user_container(
     disk_quota_mb: Optional[int] = None,
     image: Optional[str] = None,
     reserved_ssh_ports: Optional[Iterable[int]] = None,
+    preferred_ssh_port: Optional[int] = None,
     user=None,
     max_processes: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -640,7 +667,7 @@ def start_user_container(
     ssh_password = None
     candidates: List[int] = []
     if settings.SSH_ENABLED:
-        candidates = ssh_port_candidates(reserved_ssh_ports)
+        candidates = ssh_port_candidates(reserved_ssh_ports, preferred=preferred_ssh_port)
         if not candidates:
             logger.warning(
                 "SSH enabled but no free host port in range %d-%d, starting "
