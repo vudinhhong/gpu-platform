@@ -575,7 +575,7 @@ Your workspace
   CPU           2 cores
   Processes     8 of 512
   Disk speed    read 150.0 MiB/s, write 80.0 MiB/s
-  Disk space    0 MB used of 5000 MB (0%)
+  Disk space    0 B used of 4.9 GiB (0%)
   GPU           NVIDIA GeForce RTX 4090, 49140 MiB
 ----------------------------------------------------------
 ```
@@ -727,7 +727,7 @@ under exactly the caps its owner's workspace gets.
 $ submit train.sh --gpu-memory 20000 --name nightly
 job 12 submitted  [queued]
   position in queue : 1
-  asking for        : 1 GPU x 20000 MB
+  asking for        : 1 GPU x 20000 MiB
   output            : experiments/output.12.out
 
 Watch it with:  myjobs
@@ -735,8 +735,8 @@ See what is ahead of it:  queue
 
 $ queue
 GPUs
-  GPU 0    2140 MB free of 49140 MB   2 running
-  GPU 1   44210 MB free of 49140 MB   0 running
+  GPU 0    2140 MiB free of 49140 MiB   2 running
+  GPU 1   44210 MiB free of 49140 MiB   0 running
   CPU       11.5 of 28 cores free
 
    ID  STATUS     GPU         RUNTIME    WAITED  USER         NAME
@@ -771,8 +771,8 @@ job 57  finetune-qwen
   status     : queued
   position   : 1 in the queue
   waiting    : 15m00s
-  why        : waiting for GPUs: it needs 2 cards with 40000 MB free each, and 1 have that much
-  asking for : 2 GPU x 40000 MB
+  why        : waiting for GPUs: it needs 2 cards with 40000 MiB free each, and 1 have that much
+  asking for : 2 GPU x 40000 MiB
   time limit : 600 minutes
 ```
 
@@ -810,7 +810,7 @@ no username while doing it.
 
 | Command | Does |
 |---|---|
-| `submit <script.sh>` | Queue a script. `--gpu-memory MB` (required for a GPU; without it the job runs on CPU), `--gpus N`, `--no-gpu`, `--name`, `--max-minutes N` |
+| `submit <script.sh>` | Queue a script. `--gpu-memory MiB` (required for a GPU; without it the job runs on CPU), `--gpus N`, `--no-gpu`, `--name`, `--max-minutes N` |
 | `queue` | The shared queue — everyone's running and waiting jobs, public columns only. `queue <id>` for one of your own in detail; `-m` for just your rows |
 | `myjobs` | Your own jobs, newest first, finished ones included. `-n N` (default 25), `-a` active only, `-f` finished only |
 | `cancel <id> [...]` | Cancel one or several; reports anything it skipped and why |
@@ -958,7 +958,7 @@ allowance to well past it. There was no moment in between at which either could
 have been caught. Sampling faster would not have helped; the residual gap is
 the size of one allocation, not the length of the interval.
 
-> Stopped: it was holding 30000 MB of GPU memory after asking for 4096 MB, and
+> Stopped: it was holding 30000 MiB of GPU memory after asking for 4096 MiB, and
 > the scheduler had fitted other work beside it on that figure. Run it again
 > with --gpu-memory 30208.
 

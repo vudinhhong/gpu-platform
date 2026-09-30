@@ -68,19 +68,26 @@ if [ -n "$io" ]; then
 fi
 
 # ── Disk space ─────────────────────────────────────────────────────────────
+# du counts 1024-byte blocks, so these figures are MiB and not MB.  They are
+# printed through human() for two reasons: the label then says what the number
+# actually is, and a full workspace reads as "86.3 GiB" rather than as a
+# six-digit figure nobody parses at a glance.  The percentage is still computed
+# from the MiB values, so the quota arithmetic is unchanged.
 used_kb=$(du -sk "$WS" 2>/dev/null | awk '{print $1}')
 used_mb=$(( ${used_kb:-0} / 1024 ))
+used_bytes=$(( ${used_kb:-0} * 1024 ))
 if [ -n "${PLATFORM_DISK_QUOTA_MB:-}" ] && [ "${PLATFORM_DISK_QUOTA_MB}" != "0" ]; then
     pct=$(awk -v u="$used_mb" -v q="$PLATFORM_DISK_QUOTA_MB" 'BEGIN{printf "%.0f", u/q*100}')
-    printf '  %-13s %s MB used of %s MB (%s%%)\n' "Disk space" \
-        "$used_mb" "$PLATFORM_DISK_QUOTA_MB" "$pct"
+    printf '  %-13s %s used of %s (%s%%)\n' "Disk space" \
+        "$(human "$used_bytes")" \
+        "$(human "$(( ${PLATFORM_DISK_QUOTA_MB:-0} * 1048576 ))")" "$pct"
     if [ "$pct" -gt 100 ] 2>/dev/null; then
         printf '  %-13s \033[31mOver budget. No GPU and no jobs until you free space.\033[0m\n' ""
     elif [ "$pct" -ge 90 ] 2>/dev/null; then
         printf '  %-13s \033[33mAlmost full. Free some space to keep working.\033[0m\n' ""
     fi
 else
-    printf '  %-13s %s MB used\n' "Disk space" "$used_mb"
+    printf '  %-13s %s used\n' "Disk space" "$(human "$used_bytes")"
 fi
 
 # ── Job budget ─────────────────────────────────────────────────────────────

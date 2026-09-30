@@ -736,11 +736,14 @@ def gpu_overrun_allowance_mb(requested_mb: int) -> int:
     return int(max(requested_mb * factor, requested_mb + grace))
 
 
-# Enough of the VRAM note to recognise one this module wrote, including the
-# wording earlier versions used ("is using N MB of GPU memory after reserving").
+# Enough of the VRAM note to recognise one this module wrote, including notes
+# already in the database from earlier versions ("is using N MB of GPU memory
+# after reserving").  It starts at "B" rather than "MiB" on purpose: the unit
+# has been written MB and is now written MiB, and a job stopped before that
+# change still carries the old wording and must still be recognised.
 # `message` is shared with the output-size check and with the final word on a
 # job that ended, so a note may only be cleared by whoever wrote it.
-_VRAM_NOTE_MARKER = "MB of GPU memory after"
+_VRAM_NOTE_MARKER = "B of GPU memory after"
 
 
 def _check_gpu_overrun(db, job: "models.Job") -> Optional[str]:
@@ -796,7 +799,7 @@ def _check_gpu_overrun(db, job: "models.Job") -> Optional[str]:
     if used <= allowed:
         # Back inside its budget.  A warning written while it was over has to
         # go: an allocator that released its cache does not deserve to carry
-        # "this job is holding 43 GB" for the rest of the run, and a warning
+        # "this job is holding 43 GiB" for the rest of the run, and a warning
         # nobody can make go away is one people learn to ignore.
         if job.message and _VRAM_NOTE_MARKER in job.message:
             job.message = None
@@ -820,9 +823,9 @@ def _check_gpu_overrun(db, job: "models.Job") -> Optional[str]:
         job.gpu_memory_used_mb = used
         db.add(job)
 
-    detail = (f"holding {used} MB of GPU memory after asking for "
-              f"{job.gpu_memory_mb} MB")
-    # Round the suggestion up to the next 512 MB: handing back the exact peak
+    detail = (f"holding {used} MiB of GPU memory after asking for "
+              f"{job.gpu_memory_mb} MiB")
+    # Round the suggestion up to the next 512 MiB: handing back the exact peak
     # would put the next run one allocation away from the same stop.
     suggested = ((used + 511) // 512) * 512
 
@@ -1379,12 +1382,12 @@ def queued_blockers(db) -> Dict[int, Optional[str]]:
                 fits = sum(1 for g in availability if g["free_mb"] >= job.gpu_memory_mb)
                 reasons[job.id] = (
                     f"waiting for GPUs: it needs {job.gpu_count} cards with "
-                    f"{job.gpu_memory_mb} MB free each, and {fits} have that much"
+                    f"{job.gpu_memory_mb} MiB free each, and {fits} have that much"
                 )
             else:
                 reasons[job.id] = (
-                    f"waiting for GPU memory: it needs {job.gpu_memory_mb} MB free "
-                    f"and the emptiest card has {largest} MB"
+                    f"waiting for GPU memory: it needs {job.gpu_memory_mb} MiB free "
+                    f"and the emptiest card has {largest} MiB"
                 )
             continue
 

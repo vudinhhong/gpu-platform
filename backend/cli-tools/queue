@@ -36,7 +36,7 @@ def show_one(job_id):
         if note:
             print(f"  note       : {note}")
         print(f"  asking for : " + (
-            f"{job['gpu_count']} GPU x {job['gpu_memory_mb']} MB"
+            f"{job['gpu_count']} GPU x {job['gpu_memory_mb']} MiB"
             if job["gpu_count"] else "no GPU (CPU only)"))
         if job.get("max_runtime_minutes"):
             print(f"  time limit : {job['max_runtime_minutes']} minutes")
@@ -48,17 +48,17 @@ def show_one(job_id):
         print(f"  note       : {job['message']}")
     if job.get("gpus"):
         print(f"  gpus       : {', '.join(str(g) for g in job['gpus'])}"
-              f"  ({job['gpu_memory_mb']} MB requested)")
+              f"  ({job['gpu_memory_mb']} MiB requested)")
     if job.get("gpu_memory_used_mb") is not None and job.get("gpu_memory_mb"):
         # Measured against what was asked for, the figure the user chose and
         # would change.  The allowance is the platform's tolerance on top of
         # it, so it gets its own line rather than becoming the denominator.
         used, asked = job["gpu_memory_used_mb"], job["gpu_memory_mb"]
-        print(f"  gpu memory : {used} MB held of the {asked} MB asked for "
+        print(f"  gpu memory : {used} MiB held of the {asked} MiB asked for "
               f"({used * 100 // asked}%)")
     if job.get("gpu_memory_allowance_mb") and job.get("gpu_memory_enforced"):
         # Being stopped by a threshold nobody showed you is unfair.
-        print(f"  stopped at : {job['gpu_memory_allowance_mb']} MB held")
+        print(f"  stopped at : {job['gpu_memory_allowance_mb']} MiB held")
     if job.get("max_runtime_minutes"):
         print(f"  time limit : {job['max_runtime_minutes']} minutes")
     if job.get("waited_seconds"):
@@ -75,8 +75,8 @@ def show_one(job_id):
             print("  " + line)
         if job.get("output_truncated"):
             size = job.get("output_size_bytes") or 0
-            human = (f"{size / 1048576:.1f} MB" if size >= 1048576
-                     else f"{size / 1024:.0f} KB" if size >= 1024 else f"{size} B")
+            human = (f"{size / 1048576:.1f} MiB" if size >= 1048576
+                     else f"{size / 1024:.0f} KiB" if size >= 1024 else f"{size} B")
             print(f"\n  Output is {human} in total. For all of it:")
             print(f"    tail -f {job['output']}")
 
@@ -89,7 +89,7 @@ def show_queue(mine_only):
     if gpus:
         print("GPUs")
         for g in gpus:
-            print(f"  GPU {g['index']}  {g['free_mb']:>6} MB free of {g['total_mb']} MB"
+            print(f"  GPU {g['index']}  {g['free_mb']:>6} MiB free of {g['total_mb']} MiB"
                   f"   {g['running_jobs']} running")
     cpu = data.get("cpu") or {}
     if cpu.get("total_cores"):
@@ -105,7 +105,7 @@ def show_queue(mine_only):
 
     if not rows:
         print("The queue is empty. A job submitted now starts immediately.")
-        print("Submit one with:  submit <script.sh> --gpu-memory <MB>")
+        print("Submit one with:  submit <script.sh> --gpu-memory <MiB>")
         return
 
     running = sum(1 for r in rows if r["status"] in ("running", "starting"))

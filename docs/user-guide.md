@@ -165,7 +165,7 @@ Your workspace
   CPU           4 cores
   Processes     13 of 512
   Disk speed    read 150.0 MiB/s, write 80.0 MiB/s
-  Disk space    88402 MB used of 200000 MB (44%)
+  Disk space    86.3 GiB used of 195.3 GiB (44%)
   Job GPU hrs   12 of 84 used (14%)
   Job CPU hrs   180 of 1200 used (15%)
                 refills Mon 29 Sep at 00:00; a job still running when it
@@ -228,7 +228,7 @@ Four commands is the whole interface:
 
 | Command | What it does |
 |---|---|
-| `submit <script>` | Queue a script. `--gpu-memory MB` asks for a GPU, `--gpus N` for more than one, `--max-minutes N` stops it after a while, `--name` labels it |
+| `submit <script>` | Queue a script. `--gpu-memory MiB` asks for a GPU, `--gpus N` for more than one, `--max-minutes N` stops it after a while, `--name` labels it |
 | `queue` | The shared queue: what the whole machine is doing and what is waiting. `queue <id>` opens one of your own jobs |
 | `myjobs` | Your jobs, newest first, finished ones included |
 | `cancel <id>` | Take a job out of the queue, or stop it if it is running |
@@ -342,7 +342,7 @@ torch.save({"epoch": epoch, "model": model.state_dict()}, "ckpt.pt")
 | A notebook dies with no message, or the container restarts | Out of memory. Your allocation is in `limits` | Smaller batch, fewer data-loader workers, or ask for more RAM |
 | `CUDA out of memory` | Your model does not fit the card, or a job of yours is sharing it | Smaller batch, gradient accumulation, or `--gpu-memory` closer to the truth |
 | Job is queued and never starts | `queue <id>` tells you why in one line | Usually waiting for VRAM, cores, or your own running jobs to finish |
-| Job stopped with "it was holding NNNN MB" | It went past `--gpu-memory` | Resubmit with the figure the message suggests |
+| Job stopped with "it was holding NNNN MiB" | It went past `--gpu-memory` | Resubmit with the figure the message suggests |
 | Job back in the queue saying you are out of hours | Your weekly GPU budget ran out | It restarts on its own when the budget refills; ask for more if you need more |
 | Job sitting at **Paused** | Your weekly CPU budget ran out | It thaws by itself at the refill and carries on from the same point; nothing is lost |
 | `submit` says your workspace is too full | Disk quota | Delete something, then submit again |

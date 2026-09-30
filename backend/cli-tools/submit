@@ -20,7 +20,7 @@ def main():
         description="Queue a shell script to run on a GPU.",
         epilog="examples:\n"
                "  submit prepare.sh                          # no GPU\n"
-               "  submit train.sh --gpu-memory 20000         # one GPU, 20 GB\n"
+               "  submit train.sh --gpu-memory 20000         # one GPU, about 20 GiB\n"
                "  submit train.sh --gpu-memory 20000 --gpus 2\n"
                "  submit train.sh --gpu-memory 20000 --max-minutes 600\n"
                "\n--gpu-memory decides whether the job gets a GPU at all. Give a\n"
@@ -34,7 +34,7 @@ def main():
     )
     parser.add_argument("script", help="shell script to run")
     parser.add_argument("--name", help="a label to recognise it by (default: the file name)")
-    parser.add_argument("--gpu-memory", type=int, metavar="MB",
+    parser.add_argument("--gpu-memory", type=int, metavar="MiB",
                         help="GPU memory the job needs, per GPU. Required for a GPU "
                              "job; without it the job runs on CPU")
     parser.add_argument("--gpus", type=int, metavar="N",
@@ -82,7 +82,7 @@ def main():
     if job.get("queue_position"):
         print(f"  position in queue : {job['queue_position']}")
     if job["gpu_count"]:
-        print(f"  asking for        : {job['gpu_count']} GPU x {job['gpu_memory_mb']} MB")
+        print(f"  asking for        : {job['gpu_count']} GPU x {job['gpu_memory_mb']} MiB")
     else:
         print("  asking for        : no GPU (CPU only)")
     if job.get("max_runtime_minutes"):
