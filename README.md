@@ -12,6 +12,34 @@
 
 ---
 
+## Live demo
+
+A demo account is available on the **live deployment** — this is the real system
+people work on, not a sandbox:
+
+| | |
+|---|---|
+| URL | <https://workspace.duthu.net/> |
+| Username | `demouser` |
+| Password | `fordemoonly@1A` |
+
+Because it runs on the production host beside real users, the demo account is
+deliberately given a **small allocation** — enough to see how the platform
+behaves, not enough to get in anybody's way. Running into a limit is expected,
+and it is the same enforcement every other account on the machine gets: nothing
+about the demo is simulated. Run `limits` inside the workspace to see exactly
+what the account holds, read back from the kernel rather than from a settings
+page.
+
+It is still enough to see the whole shape of the platform: start a JupyterLab
+workspace, SSH into the same files, and submit work to the fair-share queue with
+`submit`, which is open to accounts that hold no GPU of their own.
+
+Please treat the account as shared. Anything left in that workspace is visible
+to whoever opens the demo next, and it may be reset without notice.
+
+---
+
 ## Overview
 
 GPU Platform is a self-hosted web application for sharing one machine's NVIDIA
