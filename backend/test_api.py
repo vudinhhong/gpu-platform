@@ -817,6 +817,151 @@ def test_usage_records_cpu_time_for_gpu_less_work(client):
     assert "fair_share" in res.json()
 
 
+def test_fair_share_counts_a_stretch_longer_than_the_window(client):
+    """A job older than the window still owes for the hours inside it.
+
+    Selecting usage rows by ``started_at`` dropped any stretch that began before
+    the window, so a job running longer than ``FAIRSHARE_WINDOW_HOURS`` made its
+    owner look idle and sent them to the *front* of the queue -- and the moment
+    it ended its whole ledger row was already out of range.  The window is a
+    window on time, not on start times: only the part outside it is forgiven.
+    """
+    from datetime import datetime, timedelta
+
+    from auth import get_password_hash
+    from config import settings
+    from services import fairshare
+
+    window = settings.FAIRSHARE_WINDOW_HOURS   # 24 by default
+    db = SessionLocal()
+    try:
+        marathon = models.User(username="marathon", email="marathon@local",
+                               hashed_password=get_password_hash("x"))
+        sprinter = models.User(username="sprinter", email="sprinter@local",
+                               hashed_password=get_password_hash("x"))
+        db.add_all([marathon, sprinter])
+        db.commit()
+        db.refresh(marathon); db.refresh(sprinter)
+
+        now = datetime.utcnow()
+
+        # One card held without a break since before the window opened, and
+        # still running: nothing is booked on the row yet.
+        db.add(models.UsageRecord(
+            user_id=marathon.id, username="marathon", gpu_count=1, cpu_cores=0,
+            backend="job", started_at=now - timedelta(hours=window + 1),
+            ended_at=None,
+        ))
+        # A one-hour job by somebody else, finished a moment ago.
+        db.add(models.UsageRecord(
+            user_id=sprinter.id, username="sprinter", gpu_count=1, cpu_cores=0,
+            backend="job", started_at=now - timedelta(hours=1),
+            ended_at=now - timedelta(seconds=1), gpu_seconds=3600,
+        ))
+        db.commit()
+        marathon_id, sprinter_id = marathon.id, sprinter.id
+
+        history = fairshare.historical_usage(db, now=now)
+
+        # Charged for the hours inside the window, not for the whole stretch and
+        # not for nothing.
+        assert history[marathon_id] == pytest.approx(window * 3600, rel=0.01), (
+            "a stretch that began before the window must still be charged for "
+            "the part of it inside the window"
+        )
+        assert history[marathon_id] > history[sprinter_id], (
+            "holding a card for a whole day must not score below a one-hour job"
+        )
+
+        # The same row, now closed: still the in-window hours, minus the part
+        # that has since fallen out of range.
+        row = (
+            db.query(models.UsageRecord)
+            .filter(models.UsageRecord.user_id == marathon_id)
+            .one()
+        )
+        row.ended_at = now
+        row.gpu_seconds = (window + 1) * 3600
+        db.commit()
+
+        closed = fairshare.historical_usage(db, now=now)
+        assert closed[marathon_id] == pytest.approx(window * 3600, rel=0.01), (
+            "closing the row must not change what the window sees"
+        )
+
+        # And a stretch that ended before the window opened is gone for good.
+        row.started_at = now - timedelta(hours=window + 3)
+        row.ended_at = now - timedelta(hours=window + 1)
+        db.commit()
+        assert marathon_id not in fairshare.historical_usage(db, now=now), (
+            "usage that ended before the window must not count at all"
+        )
+    finally:
+        db.close()
+
+
+def test_fair_share_charges_a_running_batch_job_before_it_ends(client):
+    """A job holding a card must be felt while it runs, not only afterwards.
+
+    Only an interactive workspace opens a ledger row at start (``usage.open_record``);
+    a batch job gets its row from ``jobs._book_segment`` when it leaves the
+    machine.  Reading usage from the ledger alone therefore made a running job
+    weigh nothing in the decayed sum however long it had held the hardware, and
+    then delivered the whole stretch at once once it finished.
+    """
+    from datetime import datetime, timedelta
+
+    from auth import get_password_hash
+    from config import settings
+    from services import fairshare
+
+    window = settings.FAIRSHARE_WINDOW_HOURS
+    db = SessionLocal()
+    added = []
+    try:
+        holder = models.User(username="cardholder", email="cardholder@local",
+                             hashed_password=get_password_hash("x"))
+        db.add(holder)
+        db.commit()
+        db.refresh(holder)
+
+        now = datetime.utcnow()
+        # Running longer than the window, and with no usage record of its own,
+        # which is what a real batch job looks like mid-flight.
+        job = models.Job(
+            user_id=holder.id, username="cardholder", script="long.sh", workdir="",
+            gpu_count=1, gpu_memory_mb=1000, cpu_cores=0,
+            status=models.JobStatus.running,
+            started_at=now - timedelta(hours=window + 1),
+        )
+        db.add(job)
+        db.commit()
+        added = [job, holder]
+        holder_id = holder.id
+
+        assert (
+            db.query(models.UsageRecord)
+            .filter(models.UsageRecord.user_id == holder_id)
+            .count() == 0
+        ), "precondition: a running job has no ledger row yet"
+
+        history = fairshare.historical_usage(db, now=now)
+        assert history[holder_id] == pytest.approx(window * 3600, rel=0.01), (
+            "a job still running must be charged for the hours it has held the "
+            "card inside the window, not only once it ends"
+        )
+
+        # The lookahead deposit is a separate term and is still added on top.
+        assert fairshare.current_allocation(db)[holder_id] == pytest.approx(
+            settings.FAIRSHARE_LOOKAHEAD_SECONDS, rel=0.01
+        )
+    finally:
+        for row in added:
+            db.delete(row)
+        db.commit()
+        db.close()
+
+
 def test_home_mapping_is_validated_not_guessed(client, tmp_path):
     """A mapping must be named by an administrator and must stay inside the
     configured root.  Inferring it from the username would hand a host account

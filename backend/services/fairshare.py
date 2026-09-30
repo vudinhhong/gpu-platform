@@ -21,6 +21,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Dict
 
+from sqlalchemy import or_
+
 import models
 from config import settings
 
@@ -33,11 +35,21 @@ def _weighted(gpu_seconds: float, cpu_seconds: float) -> float:
 
 
 def historical_usage(db, now: datetime = None) -> Dict[int, float]:
-    """Recent usage per user, decayed so old consumption fades.
+    """Usage accrued inside the window, per user, decayed so old work fades.
 
     Without the decay a user who ran a big job last week would stay at the back
     of the queue indefinitely; with it, the queue reflects who has been using
     the machine *lately*.
+
+    A stretch is counted for the part of it that lies **inside** the window, so
+    selecting rows by ``ended_at`` and clipping at ``since`` is the whole point:
+    selecting by ``started_at`` instead dropped any stretch older than the
+    window outright, and a job that ran longer than ``FAIRSHARE_WINDOW_HOURS``
+    left its owner looking idle -- the longer it ran, the further forward in the
+    queue they went, which is the opposite of sharing.  Work still on the machine
+    has nothing booked on it yet, so it is charged at the rates it holds: an open
+    row for a workspace, and the job table for a batch job, which has no row of
+    its own until it finishes.
     """
     now = now or datetime.utcnow()
     since = now - timedelta(hours=settings.FAIRSHARE_WINDOW_HOURS)
@@ -46,27 +58,55 @@ def historical_usage(db, now: datetime = None) -> Dict[int, float]:
     scores: Dict[int, float] = defaultdict(float)
     records = (
         db.query(models.UsageRecord)
-        .filter(models.UsageRecord.started_at >= since)
+        .filter(
+            or_(
+                models.UsageRecord.ended_at.is_(None),
+                models.UsageRecord.ended_at >= since,
+            )
+        )
         .all()
     )
     for record in records:
         if record.user_id is None:
             continue
         ended = record.ended_at or now
+        inside = max(0.0, (ended - max(record.started_at, since)).total_seconds())
+        if inside <= 0.0:
+            continue
+        if record.ended_at is None:
+            # Still running: nothing booked yet, charge what it is holding.
+            gpu_seconds = inside * max(0, record.gpu_count or 0)
+            cpu_seconds = inside * (record.cpu_cores or 0.0)
+        else:
+            # Booked: the ledger figure is wall-clock x resources held, so the
+            # part inside the window is the same fraction of it.
+            total = max(0.0, (ended - record.started_at).total_seconds())
+            share = min(1.0, inside / total) if total > 0.0 else 1.0
+            gpu_seconds = (record.gpu_seconds or 0.0) * share
+            cpu_seconds = (record.cpu_seconds or 0.0) * share
         age_hours = max(0.0, (now - ended).total_seconds() / 3600.0)
         decay = 0.5 ** (age_hours / half_life)
-        scores[record.user_id] += _weighted(record.gpu_seconds, record.cpu_seconds) * decay
+        scores[record.user_id] += _weighted(gpu_seconds, cpu_seconds) * decay
 
-    # Work that is still running has not been booked yet; count it at its
-    # current elapsed time so a long-running job is felt while it runs, not
-    # only once it ends.
-    for record in records:
-        if record.ended_at is not None or record.user_id is None:
+    # A batch job gets no ledger row until it leaves the machine, since
+    # ``jobs._book_segment`` writes one row per finished stretch.  Only an
+    # interactive workspace has a row open while it runs, so without this pass a
+    # job still holding a card would count for nothing here however long it had
+    # held it -- and the whole stretch would arrive at once, after the fact.
+    # Charge the live stretch from the job itself, clipped to the window exactly
+    # as an open record is.  There is no double count: while the job runs no row
+    # exists, and the row and the status change land in the same transaction.
+    # The decay factor is 1 because the stretch runs up to ``now``.
+    active = (models.JobStatus.starting, models.JobStatus.running)
+    for job in db.query(models.Job).filter(models.Job.status.in_(active)).all():
+        if job.user_id is None or not job.started_at:
             continue
-        elapsed = max(0.0, (now - max(record.started_at, since)).total_seconds())
-        scores[record.user_id] += _weighted(
-            elapsed * max(1, record.gpu_count or 0) if record.gpu_count else 0.0,
-            elapsed * (record.cpu_cores or 0.0),
+        inside = max(0.0, (now - max(job.started_at, since)).total_seconds())
+        if inside <= 0.0:
+            continue
+        scores[job.user_id] += _weighted(
+            inside * max(0, job.gpu_count or 0),
+            inside * (job.cpu_cores or 0.0),
         )
     return scores
 
