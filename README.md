@@ -1,5 +1,8 @@
 # GPU Platform — Multi-User GPU / CPU / RAM Management Platform
 
+[![tests](https://github.com/vudinhhong/gpu-platform/actions/workflows/tests.yml/badge.svg)](https://github.com/vudinhhong/gpu-platform/actions/workflows/tests.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23570943.svg)](https://doi.org/10.5281/zenodo.23570943)
+
 > This file is the reference: how the platform is built, what every setting
 > does, and why. If you only want to get something done, start with the
 > **[administrator guide](docs/admin-guide.md)** and the
@@ -1365,7 +1368,9 @@ bundled here.
 
 If the platform is useful in work you publish, please cite it using
 [`CITATION.cff`](CITATION.cff) (GitHub's *Cite this repository* button reads
-it). Each release is archived with its own DOI, listed on the release page.
+it). Every release is archived on Zenodo: [10.5281/zenodo.23570943](https://doi.org/10.5281/zenodo.23570943)
+always resolves to the latest one, and each release also has a DOI of its own
+(v1.1.0: [10.5281/zenodo.23570944](https://doi.org/10.5281/zenodo.23570944)).
 
 ---
 

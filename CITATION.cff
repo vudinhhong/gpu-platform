@@ -15,6 +15,7 @@ authors:
     given-names: Anh-Cuong
     email: leanhcuong@tdtu.edu.vn
     affiliation: "Faculty of Information Technology, Ton Duc Thang University"
+doi: 10.5281/zenodo.23570943
 repository-code: "https://github.com/vudinhhong/gpu-platform"
 license: Apache-2.0
 keywords:
