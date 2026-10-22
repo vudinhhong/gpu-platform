@@ -115,7 +115,7 @@ def nvidia_smi_available() -> bool:
     return _run(["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"]) is not None
 
 
-_UUID_CACHE: Dict[str, Any] = {"at": 0.0, "by_uuid": {}, "by_index": {}}
+_UUID_CACHE: Dict[str, Any] = {"at": float("-inf"), "by_uuid": {}, "by_index": {}}
 _UUID_TTL = 300  # GPU topology does not change while the host is up
 
 
@@ -256,7 +256,7 @@ def _get_process_name(pid: int, known: Optional[str] = None) -> str:
 # GPU process → platform user attribution
 # ---------------------------------------------------------------------------
 
-_OWNER_CACHE: Dict[str, Any] = {"at": 0.0, "map": {}}
+_OWNER_CACHE: Dict[str, Any] = {"at": float("-inf"), "map": {}}
 _OWNER_TTL = 10  # seconds, `docker top` on every container is not free
 
 
@@ -329,7 +329,7 @@ def pid_owner_map() -> Dict[int, Dict[str, str]]:
     return owners
 
 
-_UID_MAP_CACHE: Dict[str, Any] = {"at": 0.0, "accounts": {"by_uid": {}, "names": set()}}
+_UID_MAP_CACHE: Dict[str, Any] = {"at": float("-inf"), "accounts": {"by_uid": {}, "names": set()}}
 _UID_MAP_TTL = 60
 
 

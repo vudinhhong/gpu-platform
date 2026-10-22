@@ -123,6 +123,20 @@ def _clear_rate_limiter():
 
 
 @pytest.fixture(autouse=True)
+def _cpu_pool_of_the_reference_host(monkeypatch):
+    """Size the job CPU pool as on the 32-core reference host.
+
+    Left at 0 the pool is the runner's own core count less the reserve, and a
+    4-core CI runner then has no core to hand out: every job waits for CPU
+    and the queue tests fail for a reason that has nothing to do with them.
+    """
+    from config import settings as cfg
+
+    monkeypatch.setattr(cfg, "JOB_CPU_POOL_CORES", 28)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _clear_gpu_caches():
     """The GPU monitor caches its last reading, so tests must not inherit one.
 
@@ -133,7 +147,7 @@ def _clear_gpu_caches():
     yield
     from services import gpu_monitor
 
-    gpu_monitor._UUID_CACHE.update({"at": 0.0, "by_uuid": {}, "by_index": {}})
+    gpu_monitor._UUID_CACHE.update({"at": float("-inf"), "by_uuid": {}, "by_index": {}})
     gpu_monitor._MINOR_CACHE.update({"at": 0.0, "by_index": {}})
     gpu_monitor._TELEMETRY.update({"at": 0.0, "gpus": [], "failing_since": None,
                                    "error": None})
@@ -1892,7 +1906,7 @@ def test_only_a_mapped_uid_claims_a_host_process(client, tmp_path):
     finally:
         db.close()
 
-    gpu_monitor._UID_MAP_CACHE.update({"at": 0.0, "accounts": {"by_uid": {}, "names": set()}})
+    gpu_monitor._UID_MAP_CACHE.update({"at": float("-inf"), "accounts": {"by_uid": {}, "names": set()}})
     mapping = gpu_monitor.platform_uid_map()
     assert mapping.get(uid) == "hostmapped"
     assert "nothostmapped" not in mapping.values(), (
@@ -2015,7 +2029,7 @@ def test_a_batch_jobs_processes_are_attributed_too(monkeypatch):
         return []
 
     monkeypatch.setattr(container_manager, "list_platform_containers", fake_list)
-    gpu_monitor._OWNER_CACHE.update({"at": 0.0, "map": {}})
+    gpu_monitor._OWNER_CACHE.update({"at": float("-inf"), "map": {}})
     gpu_monitor.pid_owner_map()
 
     assert asked["role"] is None, "job containers were filtered out of attribution"
@@ -2041,7 +2055,7 @@ def _fake_nvidia_smi(monkeypatch, uuid="GPU-test-0"):
     monkeypatch.setattr(gpu_monitor, "process_uid", lambda pid: 1003)
     monkeypatch.setattr(gpu_monitor, "_get_process_name",
                         lambda pid, known=None: "python /home/someone-else/secret/train.py")
-    gpu_monitor._UUID_CACHE.update({"at": 0.0, "by_uuid": {}, "by_index": {}})
+    gpu_monitor._UUID_CACHE.update({"at": float("-inf"), "by_uuid": {}, "by_index": {}})
 
 
 def test_a_users_view_of_a_shared_gpu_carries_no_command_lines(monkeypatch):
@@ -2082,7 +2096,7 @@ def test_reading_the_accounts_twice_uses_the_cache_without_crashing():
     from services import gpu_monitor
 
     gpu_monitor._UID_MAP_CACHE.update(
-        {"at": 0.0, "accounts": {"by_uid": {}, "names": set()}})
+        {"at": float("-inf"), "accounts": {"by_uid": {}, "names": set()}})
 
     cold_uids = gpu_monitor.platform_uid_map()
     cold_names = gpu_monitor.platform_usernames()

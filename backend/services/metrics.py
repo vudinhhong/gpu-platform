@@ -228,7 +228,7 @@ def for_user(username: str) -> Optional[Dict[str, Any]]:
 # Disk usage per user (separate cadence, du is far more expensive)
 # ---------------------------------------------------------------------------
 
-_disk_cache: Dict[str, Any] = {"at": 0.0, "by_user": {}}
+_disk_cache: Dict[str, Any] = {"at": float("-inf"), "by_user": {}}
 
 
 def set_user_disk_usage(username: str, megabytes: int) -> int:
