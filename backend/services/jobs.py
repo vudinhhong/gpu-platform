@@ -841,13 +841,19 @@ def _check_gpu_overrun(db, job: "models.Job") -> Optional[str]:
         db.add(job)
         return "noted"
 
-    container_manager.stop_job_container(job.id)
-    container_manager.remove_job_container(job.id)
-    _close(db, job, models.JobStatus.failed, None,
-           f"Stopped: it was {detail}, and the scheduler had fitted other work "
-           f"beside it on that figure. Run it again with --gpu-memory {suggested}.")
+    # Claim the job before stopping it, and commit the claim, so the scheduler
+    # pass that sees the container exit finds it already closed with this
+    # reason rather than closing it a second time as "exited with code 143".
+    # Committing here also keeps the database unlocked while docker stops it.
+    if not _close(db, job, models.JobStatus.failed, None,
+                  f"Stopped: it was {detail}, and the scheduler had fitted other work "
+                  f"beside it on that figure. Run it again with --gpu-memory {suggested}."):
+        return None
     audit.record(db, "job.gpu_overrun_stopped", actor="system",
                  target=f"job:{job.id}", detail=detail, commit=False)
+    db.commit()
+    container_manager.stop_job_container(job.id)
+    container_manager.remove_job_container(job.id)
     return "stopped"
 
 
@@ -1098,11 +1104,34 @@ def _check_output_size(db, job: "models.Job") -> Optional[str]:
     return None
 
 
-def _close(db, job: "models.Job", status_value, exit_code, message) -> None:
+def _close(db, job: "models.Job", status_value, exit_code, message) -> bool:
+    """Record how a job ended, once.  False when something else got there first.
+
+    The VRAM guard and the scheduler pass run in different threads with their
+    own sessions, and both can end the same job: the guard stops a container,
+    the scheduler sees it exit.  Setting the attributes on each session's copy
+    let both close it, so the ledger booked the last stretch twice and the
+    guard's reason was overwritten by "exited with code 143".  The status
+    change is therefore a compare-and-set on a job that is still active, and
+    only the side that wins it books the stretch.
+    """
+    now = datetime.utcnow()
+    claimed = (
+        db.query(models.Job)
+        .filter(models.Job.id == job.id, models.Job.status.in_(_ACTIVE))
+        .update({models.Job.status: status_value, models.Job.exit_code: exit_code,
+                 models.Job.message: message, models.Job.finished_at: now,
+                 models.Job.container_id: None}, synchronize_session=False)
+    )
+    if not claimed:
+        db.expire(job, ["status", "exit_code", "message", "finished_at", "container_id"])
+        logger.info("Job %d was already closed elsewhere; leaving it", job.id)
+        return False
+    # Keep this session's copy in step with the row it just wrote.
     job.status = status_value
     job.exit_code = exit_code
     job.message = message
-    job.finished_at = datetime.utcnow()
+    job.finished_at = now
     job.container_id = None
     db.add(job)
     # Book the last stretch against the owner, so jobs count toward their
@@ -1111,6 +1140,7 @@ def _close(db, job: "models.Job", status_value, exit_code, message) -> None:
     # real usage from the reports and from fair share.
     _book_segment(db, job, job.finished_at, status_value.value)
     logger.info("Job %d for %r → %s", job.id, job.username, status_value.value)
+    return True
 
 
 def _dispatch_queued(db) -> List[Dict[str, Any]]:
@@ -1216,7 +1246,12 @@ def _dispatch_queued(db) -> List[Dict[str, Any]]:
         fairshare.charge(share, job.user_id, job.gpu_count, job_cores)
         for entry in availability:
             if entry["index"] in placement:
-                entry["free_mb"] = max(0, entry["free_mb"] - job.gpu_memory_mb)
+                # The allowance, not the request: gpu_availability counts
+                # admitted jobs at their allowance, and a job admitted earlier
+                # in this same pass must be counted the same way, or the next
+                # one is placed in the margin the first may still grow into.
+                entry["free_mb"] = max(0, entry["free_mb"]
+                                       - gpu_overrun_allowance_mb(job.gpu_memory_mb))
                 entry["running_jobs"] += 1
         started.append({
             "id": job.id, "user": job.username,
@@ -1408,7 +1443,12 @@ def queued_blockers(db) -> Dict[int, Optional[str]]:
         fairshare.charge(share, job.user_id, job.gpu_count, job_cores)
         for entry in availability:
             if entry["index"] in placement:
-                entry["free_mb"] = max(0, entry["free_mb"] - job.gpu_memory_mb)
+                # The allowance, not the request: gpu_availability counts
+                # admitted jobs at their allowance, and a job admitted earlier
+                # in this same pass must be counted the same way, or the next
+                # one is placed in the margin the first may still grow into.
+                entry["free_mb"] = max(0, entry["free_mb"]
+                                       - gpu_overrun_allowance_mb(job.gpu_memory_mb))
                 entry["running_jobs"] += 1
 
     return reasons

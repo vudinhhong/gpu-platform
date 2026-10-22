@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use GPU Platform in work you publish, please cite it as below."
+title: "GPU Platform: multi-user GPU, CPU and memory management for a shared workstation"
+type: software
+authors:
+  - family-names: Vu
+    given-names: Dinh-Hong
+    email: vudinhhong@tdtu.edu.vn
+    affiliation: "Faculty of Information Technology, Ton Duc Thang University"
+  - family-names: Duong
+    given-names: Trong-Chi
+    email: duongtrongchi@tdtu.edu.vn
+    affiliation: "Faculty of Information Technology, Ton Duc Thang University"
+  - family-names: Le
+    given-names: Anh-Cuong
+    email: leanhcuong@tdtu.edu.vn
+    affiliation: "Faculty of Information Technology, Ton Duc Thang University"
+repository-code: "https://github.com/vudinhhong/gpu-platform"
+license: Apache-2.0
+keywords:
+  - GPU sharing
+  - multi-tenancy
+  - resource isolation
+  - cgroups
+  - fair-share scheduling

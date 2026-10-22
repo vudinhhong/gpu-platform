@@ -16,7 +16,7 @@ docker compose version >/dev/null 2>&1 || { echo "ERROR: Docker Compose v2 not f
 HOST_GPU=false
 if command -v nvidia-smi >/dev/null 2>&1 \
    && nvidia-smi -L >/dev/null 2>&1 \
-   && docker info 2>/dev/null | grep -qi 'nvidia'; then
+   && docker info 2>/dev/null | grep -i 'nvidia' >/dev/null; then
     HOST_GPU=true
 fi
 
@@ -78,7 +78,7 @@ fi
 # Honour an explicit HTTP_MODE (env or .env); otherwise pick by probing :80.
 
 detect_http_mode() {
-    if ss -ltn 2>/dev/null | grep -qE '(^|[^0-9.]):80\s'; then
+    if ss -ltn 2>/dev/null | grep -E '(^|[^0-9.]):80\s' >/dev/null; then
         echo host
     else
         echo edge
@@ -175,6 +175,12 @@ if [ ! -f .env ]; then
         fi
     fi
 
+    # A fixed initial admin password is a known credential on every fresh
+    # install until somebody remembers to change it, so each install gets its
+    # own.  The trailing "a1" guarantees the letter and digit the password
+    # policy asks for.
+    ADMIN_PASSWORD="$(printf '%s' "$SECRET_KEY" | sha256sum | head -c 14)a1"
+
     # Whether this host has a GPU is recorded, not rediscovered.  The guard
     # further down refuses to deploy when .env expects GPUs and none are
     # visible, which is right for a GPU host having a bad day and wrong for a
@@ -188,7 +194,7 @@ if [ ! -f .env ]; then
 
     cat > .env << ENVEOF
 SECRET_KEY=$SECRET_KEY
-ADMIN_PASSWORD=admin123
+ADMIN_PASSWORD=$ADMIN_PASSWORD
 HTTP_MODE=$HTTP_MODE
 WEB_BIND=$WEB_BIND
 WEB_PORT=$WEB_PORT
@@ -203,7 +209,7 @@ ENVEOF
     echo "  .env created (HTTP_MODE=$HTTP_MODE)."
     [ "$CPU_ONLY_MARK" = "true" ] && echo "  CPU_ONLY=true recorded: no GPU here, workspaces are CPU containers."
     echo ""
-    echo "  ⚠  Default admin password: admin123.  CHANGE IT after first login!"
+    echo "  Initial admin password: $ADMIN_PASSWORD  (also in .env as ADMIN_PASSWORD)"
 else
     echo ""
     echo ".env already exists, reconciling with this host..."
@@ -430,7 +436,7 @@ else
     echo ""
     echo "  ✗ $CHECK_URL did not answer."
     if command -v iptables >/dev/null 2>&1 \
-       && iptables -S 2>/dev/null | grep -q '^-P OUTPUT DROP' \
+       && iptables -S 2>/dev/null | grep '^-P OUTPUT DROP' >/dev/null \
        && ! iptables -C OUTPUT -o "$BRIDGE_IF" -j ACCEPT 2>/dev/null; then
         echo ""
         echo "  CAUSE: this host has a default-DROP OUTPUT firewall policy and no"
@@ -476,7 +482,7 @@ else
     echo "  Mode         : bundled edge nginx"
     echo "  Platform URL : http://$SERVER_IP"
 fi
-echo "  Default login: admin / admin123"
+echo "  Admin login  : admin / the ADMIN_PASSWORD in .env"
 echo ""
-echo "  IMPORTANT: change the admin password immediately after first login."
+echo "  Change the admin password after the first login."
 echo "============================================"

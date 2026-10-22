@@ -1,42 +1,9 @@
 # GPU Platform — Multi-User GPU / CPU / RAM Management Platform
 
-> **Version 1.0.** This file is the reference: how the platform is built, what
-> every setting does, and why each decision went the way it did. If you only
-> want to get something done, start with the guides instead, the
+> This file is the reference: how the platform is built, what every setting
+> does, and why. If you only want to get something done, start with the
 > **[administrator guide](docs/admin-guide.md)** and the
 > **[user guide](docs/user-guide.md)**.
->
-> The [development history](#development-history) at the end records what was
-> rebuilt along the way and why, which is usually the part you want when
-> something surprises you.
-
----
-
-## Live demo
-
-A demo account is available on the **live deployment** — this is the real system
-people work on, not a sandbox:
-
-| | |
-|---|---|
-| URL | <https://workspace.duthu.net/> |
-| Username | `demouser` |
-| Password | `fordemoonly@1A` |
-
-Because it runs on the production host beside real users, the demo account is
-deliberately given a **small allocation** — enough to see how the platform
-behaves, not enough to get in anybody's way. Running into a limit is expected,
-and it is the same enforcement every other account on the machine gets: nothing
-about the demo is simulated. Run `limits` inside the workspace to see exactly
-what the account holds, read back from the kernel rather than from a settings
-page.
-
-It is still enough to see the whole shape of the platform: start a JupyterLab
-workspace, SSH into the same files, and submit work to the fair-share queue with
-`submit`, which is open to accounts that hold no GPU of their own.
-
-Please treat the account as shared. Anything left in that workspace is visible
-to whoever opens the demo next, and it may be reset without notice.
 
 ---
 
@@ -96,17 +63,12 @@ Figure 1 of the article cited at the end of this file.
 * **NVIDIA GPU(s)** with working drivers (`nvidia-smi`)
 * **nvidia-container-toolkit** so containers can be given GPUs
 
-> **Scope of v1.0: GPUs without MIG.** A whole physical GPU is the unit this
-> version hands out, identified by UUID. It does not drive MIG instances, and
-> on a card with MIG enabled it has not been tested at all — the authors have
-> no MIG-capable device to verify against, and shipping the feature untested
-> would contradict the one thing the rest of this platform argues for, which is
-> reading back what was actually applied instead of trusting what was
-> configured. This is the intended hardware anyway: MIG is not available on
-> GeForce-class cards, which is what the groups this targets own. The
-> consequence is that a VRAM reservation here is bookkeeping and not a hardware
-> barrier; see [Batch jobs](#batch-jobs-sharing-gpus-by-time) for what that
-> does and does not buy you.
+> **Scope: GPUs without MIG.** A whole physical GPU is the unit the platform
+> hands out, identified by UUID. It does not drive MIG instances and has not
+> been tested on a card with MIG enabled. MIG is not available on GeForce-class
+> cards, which is the hardware this targets, so a VRAM reservation here is
+> enforced by measurement rather than by the hardware; see
+> [Batch jobs](#batch-jobs-sharing-gpus-by-time).
 
 ### A machine without a GPU
 
@@ -125,11 +87,12 @@ per-user memory, core or CPU-second limit is set on its own — see
 later deployment as a host that has lost its cards; `deploy.sh` clears it by
 itself if a GPU ever turns up.
 
-On Docker Desktop (macOS, Windows) the daemon runs inside a VM that only sees the
-paths shared with it, so the read-only `/home` mapping is skipped — pointing a
-user at an existing home directory is the one feature that will report the
-directory as not visible. Run `FORCE_HOME_MOUNT=1 ./deploy.sh` if you have shared
-the path with the VM and want it mapped anyway.
+**Supported platform: Linux with cgroup v2.** That is where every limit
+described here was verified. Docker Desktop (macOS, Windows) can start the stack
+for trying out the interface, but its daemon runs inside a VM, there is no GPU
+pass-through to the workspaces, and the read-only `/home` mapping is skipped
+(`FORCE_HOME_MOUNT=1 ./deploy.sh` maps it anyway if you have shared the path
+with the VM). It is not a supported way to run the platform for a group.
 
 ### Install nvidia-container-toolkit (Ubuntu/Debian)
 
@@ -152,10 +115,29 @@ Verify: `docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu22.04 nvidia-smi
 
 ## Quick start
 
+From a Linux host with the [prerequisites](#prerequisites) to a first job:
+
 ```bash
-cd workspace-gpu
-./deploy.sh          # detects GPUs, picks the HTTP mode, builds and starts everything
+git clone https://github.com/vudinhhong/gpu-platform.git
+cd gpu-platform
+./deploy.sh          # checks prerequisites, detects GPUs, builds and starts everything
 ```
+
+1. Open the URL `deploy.sh` prints and sign in as `admin` with the password it
+   printed (also in `.env` as `ADMIN_PASSWORD`). Change it: your name in the
+   top right, then **Change password**.
+2. **Admin → Users → Create user**, e.g. `alice`.
+3. Optional: **Admin → Assignments** to give `alice` memory and core limits
+   (and a GPU, if she needs one all day).
+4. Sign in as `alice` and press **Start Jupyter**. JupyterLab opens in her own
+   container; `limits` in its terminal shows what she holds.
+5. In that terminal, queue a first job:
+
+   ```bash
+   printf 'nvidia-smi -L\nnproc\nfree -m\n' > hello.sh
+   submit hello.sh --gpu-memory 2000     # or --no-gpu on a CPU-only host
+   myjobs                                # then: cat output.<id>.out
+   ```
 
 You can run `deploy.sh` as often as you like. It builds the per-user Jupyter
 image *before* starting the stack rather than at session start, which would
@@ -163,16 +145,14 @@ otherwise block the API for several minutes the first time somebody logs in. It
 also reconciles `.env` with whatever the host currently looks like, and prints
 the next step for the HTTP mode it picked.
 
-Two things it does on the way, both of them lessons from getting this wrong:
+Two things it does on the way:
 
 **It snapshots before it starts.** `.env`, the database and the fully merged
 compose configuration go to `data/backups/` first, last twenty kept. The
 database copy is taken with `sqlite3 .backup` and not with `cp`: the database
-runs in WAL mode, so a plain copy silently leaves behind whatever is still in
-the write-ahead log — on this host that was three jobs out of 227, in a file
-whose `PRAGMA integrity_check` still says `ok`. The compose snapshot is the one
-that answers "was the GPU overlay actually applied", which is not a question you
-want to be reverse-engineering from a broken stack.
+runs in WAL mode, so a plain copy can silently leave out whatever is still in
+the write-ahead log. The compose snapshot answers "was the GPU overlay actually
+applied".
 
 **It refuses rather than guessing.** If no usable GPU is detected on a host that
 is not recorded as CPU-only, `deploy.sh` stops with an error. A transient
@@ -296,7 +276,7 @@ All configuration lives in `.env` (start from `.env.example`).
 | Variable | Default | Description |
 |---|---|---|
 | `SECRET_KEY` | *(generated)* | JWT signing **and** the key session secrets are encrypted with. Rotating it logs everyone out and invalidates stored session secrets. |
-| `ADMIN_PASSWORD` | `admin123` | Initial password for `admin` — change it |
+| `ADMIN_PASSWORD` | *(generated)* | Initial password for `admin`, generated per install by `deploy.sh` and printed once. Change it after the first login |
 | `HTTP_MODE` | auto | `host` or `edge` (see above) |
 | `WEB_BIND` / `WEB_PORT` | `127.0.0.1` / `7080` | Where the stack publishes itself in host mode |
 | `BACKEND_BIND` | `127.0.0.1` | Bind address for the API port (debugging) |
@@ -323,7 +303,7 @@ All configuration lives in `.env` (start from `.env.example`).
 | `CONTAINER_PIDS_LIMIT` | `512` | cgroup `pids.max` — the fork-bomb ceiling |
 | `DISK_READ_BPS_MB` / `DISK_WRITE_BPS_MB` | `150` / `80` | Hard per-container I/O ceilings (MB/s) |
 | `DISK_READ_IOPS` / `DISK_WRITE_IOPS` | `0` | Optional operation-count caps (useful on HDDs) |
-| `BLKIO_WEIGHT` | `500` | Fair share when containers contend for the disk |
+| `BLKIO_WEIGHT` | `500` | Proportional share under disk contention. cgroup v1 only; skipped on cgroup v2 (see [Disk I/O](#disk-io)) |
 
 ### Quotas and lifecycle
 
@@ -352,9 +332,9 @@ Sizing the two job budgets: capacity per week is `GPUs × 168` GPU-hours and
 `(cores − JOB_CPU_RESERVED_CORES) × 168` CPU-hours. Divide by the number of
 people who need the queue at once for an equal share, then round up, since a
 budget is a ceiling against one person taking everything, not a ration everyone
-is expected to spend. On the two-GPU, 32-core reference host with four active
-users that is 336 / 4 ≈ **84 GPU-hours** and 4704 / 4 ≈ **1200 CPU-hours** a
-week each.
+is expected to spend. For example, two GPUs, 32 cores with four reserved, and
+four active users give 336 / 4 = **84 GPU-hours** and 4704 / 4 ≈ **1200
+CPU-hours** a week each.
 
 ### Security
 
@@ -433,13 +413,11 @@ works for JupyterLab and for SSH into their container. There is nothing to
 configure, no separate SSH password to copy off the dashboard, and no token in
 any URL.
 
-We started out with three passwords and it was miserable. The reason there were
-three is that the account password is stored as bcrypt, and bcrypt cannot be
-turned into the formats Jupyter and sshd want. Rather than keep two more
-secrets around, the platform derives what each of them needs at the moments the
-plaintext is legitimately in hand: account creation, password change, admin
-reset, and a successful login, which is what backfills accounts created before
-any of this existed.
+The account password is stored as bcrypt, which cannot be turned into the
+formats Jupyter and sshd want. Rather than keep two more secrets around, the
+platform derives what each of them needs at the moments the plaintext is
+legitimately in hand: account creation, password change, admin reset, and a
+successful login.
 
 | Derived value | Format | Used by |
 |---|---|---|
@@ -470,8 +448,12 @@ from the dashboard.
 
 ### GPU assignment
 
-Each user's container is created with a Docker device request naming the UUIDs
-of the GPUs they were granted. That request becomes a device cgroup in the
+An administrator picks GPUs by index (GPU 0, GPU 1), because that is what
+`nvidia-smi` shows. When the container is created the backend resolves each
+index to the card's UUID with `nvidia-smi`, and the container is created with
+a Docker device request naming those UUIDs. Only if `nvidia-smi` cannot
+answer at that moment does the request fall back to the index, which the
+NVIDIA runtime also accepts. That request becomes a device cgroup in the
 kernel, so the container cannot see, open or use any other card no matter what
 the user does to `CUDA_VISIBLE_DEVICES`. Inside the container the granted GPUs
 are renumbered from 0.
@@ -482,13 +464,13 @@ physical card.
 
 ### An assignment is not a share
 
-This is the most useful thing we learned from running the platform, and it is
-easy to get backwards.
-
-Assigning GPU 0 to someone gives them **unrestricted** use of it. No fair-share
-score applies to an interactive workspace, nothing caps how much VRAM they take
-or how long they hold it, and the platform has no opinion about whether they
-are using it. That is correct for a person with sustained work who genuinely
+Assigning GPU 0 to someone gives them **unrestricted** use of it. The VRAM they
+take and how long they hold it are not capped, and their interactive time is
+not charged to the job budgets. The only place an open workspace counts is the
+fair-share score of that user's own *batch jobs*: a workspace holding a card
+is charged as "what they hold now" (see
+[fair share](#who-goes-next-fair-share-rather-than-first-come-first-served)),
+so somebody sitting on an assigned GPU is not also first in the queue. That is correct for a person with sustained work who genuinely
 needs a card all day. It is the wrong default for a group.
 
 Jobs can still be placed on an assigned card, because placement only looks at
@@ -537,9 +519,10 @@ there.** This is worth spelling out because the variable is still in
 control. On the v2 unified hierarchy Docker and runc will happily accept it and
 convert it to `io.weight` (500 becomes 4950), but `io.weight` is only *honoured*
 when the device runs the **BFQ** scheduler or has **blk-iocost** configured.
-Neither is the default. On the reference host, an NVMe on `none`/`mq-deadline`
-with no iocost, the value would be written and then ignored, so the platform
-skips it and `docker inspect` reports `BlkioWeight: 0`.
+Neither is the default on a typical NVMe (`none`/`mq-deadline`, no iocost), so
+the value would be written and then ignored. The platform therefore skips it,
+`docker inspect` reports `BlkioWeight: 0`, and the read-back below shows no
+weight rather than echoing the configuration.
 
 None of this is about the hardware. It is the I/O scheduler and the cgroup
 version. To get proportional sharing back you would enable one of:
@@ -565,42 +548,33 @@ rm probe
 ```
 
 Then divide by the number of people you expect to be copying data at the same
-time. On the reference host that measures 3.2 GB/s read and 3.7 GB/s write, so
-four simultaneous copiers works out at roughly 800 MB/s read and 900 MB/s
-write.
-
-The defaults of 150/80 MiB/s are deliberately timid because the shipped
-configuration has no idea what disk it will land on. On this NVMe they leave a
-lone user at 4.9% of the read and 2.3% of the write the hardware can do, and it
-would take twenty containers reading flat out to saturate it. If your disk is
-fast, raise them.
+time. The defaults of 150/80 MiB/s are deliberately timid because the shipped
+configuration has no idea what disk it will land on; on a modern NVMe they are
+a small fraction of what the device can do, so if your disk is fast, raise
+them.
 
 ### What is actually enforced
 
-A limit a configuration file mentions is not a limit. The numbers below come
-from a live workspace on the reference host, assigned one GPU, 10,048 MiB of
-RAM, 10 cores, 512 processes and 150/80 MiB/s of disk.
+A limit a configuration file mentions is not a limit. What each one rests on:
 
-| Limit | Mechanism | Probed from inside |
+| Limit | Mechanism | Exceeding it |
 |---|---|---|
-| RAM | cgroup `memory.max` | holds 10,536,091,648 bytes with swap equal to it; 4 of the 55 jobs run here so far ended `OOMKilled`, each inside its own container |
-| CPU | cgroup `cpu.max` | 24 busy processes against a 10-core cap burned 60.30 CPU-seconds in 6.00 s of wall clock, i.e. **10.04 cores** |
-| Processes | cgroup `pids.max` | 512, refuses further forks |
-| Disk read | cgroup `io.max` | cap 150 MiB/s, `dd` with `iflag=direct` measured **158 MB/s** |
-| Disk write | cgroup `io.max` | cap 80 MiB/s, `dd` with `oflag=direct` measured **83.9 MB/s** |
-| GPU | Docker device request | `nvidia-smi -L` lists 1 of the host's 2, UUID matching the request, while `NVIDIA_VISIBLE_DEVICES` is empty |
-| **Disk space** | **none** | **not enforced by the kernel, see below** |
+| RAM | cgroup `memory.max`, swap disabled | the kernel OOM-kills inside that container only |
+| CPU | cgroup `cpu.max` | throttled to the core count |
+| Processes | cgroup `pids.max` | `fork()` fails |
+| Disk read / write | cgroup `io.max` | throttled to the cap |
+| GPU | Docker device request by UUID (device cgroup) | other cards cannot be opened |
+| **Disk space** | **none** | **measured, not enforced by the kernel, see below** |
+| **VRAM of a batch job** | **none** | **measured, the job is stopped afterwards, see [below](#--gpu-memory-decides-everything-and-is-held-to)** |
 
-The disk figures look like an overshoot and are not one. The caps are set in
-MiB/s and `dd` reports MB/s: 150 MiB/s is 157.29 MB/s and 80 MiB/s is 83.89,
-so both landed on the cap to three significant figures.
+`scripts/experiments/` contains the probes that check each row from inside a
+live workspace and print what they measured.
 
 Don't trust the settings, read back what was actually applied per user:
 `GET /api/user/me/resources` → `enforced`, and **Admin → Resources** shows the
-same thing. This matters more than it sounds. The reference host is configured
-with `BLKIO_WEIGHT=500` and every container has no weight at all, for the
-reason in the next section. Echoing the configuration would have reported a
-kind of fair sharing that nothing on the machine was doing.
+same thing. A Docker daemon that rejects a setting drops it and starts the
+container anyway, so echoing the configuration would report limits that
+nothing on the machine is applying.
 
 ### Why the standard tools report the wrong numbers
 
@@ -661,8 +635,14 @@ bash Miniconda3-latest-Linux-x86_64.sh -b -p ~/miniconda3
 
 > The cgroup-aware `df` and `free` only rewrite the plain interactive forms
 > (`df`, `df -h`, `free -m`). Any other option, such as `df -Pk` or `free -w`
-> or anything else a script would use, goes to the real tool untouched.
-> Installers do arithmetic on that output, and one of them died doing it.
+> or anything else a script would use, goes to the real tool untouched, because
+> installers do arithmetic on that output.
+>
+> [LXCFS](https://github.com/lxc/lxcfs) solves the same problem at the `/proc`
+> level, for every program rather than four commands. The platform does not
+> depend on it because it is a host daemon outside Docker that every node would
+> need installed and kept running, and because it cannot report the platform's
+> own budgets (disk quota, job hours). The wrappers and LXCFS do not conflict.
 
 ### Disk space is a soft quota
 
@@ -756,10 +736,12 @@ end, GPU-seconds, peak RAM and end reason (`user`, `admin`, `idle`, `died`,
 
 ### Who is on which GPU
 
-`nvidia-smi` reports host PIDs, and user workloads live in their own PID
-namespace, so reading `/proc` from the backend finds nothing. The monitor
-matches those PIDs against `docker top` of every platform container instead,
-which is what puts an owner's name next to each compute process. Command lines
+`nvidia-smi` reports host PIDs. The backend runs in the host PID namespace
+(`pid: host` in `docker-compose.gpu.yml`), so it maps each PID to its container
+through `/proc/<pid>/cgroup`, and to the user who owns that container; this is
+what puts an owner's name next to each compute process and what the VRAM guard
+reads. The security cost of `pid: host` is discussed under
+[Security model](#security-model). Command lines
 are redacted before display, because a Jupyter process carries its session
 token in `argv`.
 
@@ -794,10 +776,10 @@ GPUs
   CPU       11.5 of 28 cores free
 
    ID  STATUS     GPU         RUNTIME    WAITED  USER         NAME
-   50  running    0            21h30m       12s  vdhong       eld-sweep
-   55  running    0             3h10m     5m40s  trongchi     ldg-collect
-   57  queued     2x40000M          -    15m00s  uet          finetune-qwen
-   58  queued     cpu               -     2m00s  vdhong       prep
+   50  running    0            21h30m       12s  alice        eld-sweep
+   55  running    0             3h10m     5m40s  bob          ldg-collect
+   57  queued     2x40000M          -    15m00s  carol        finetune-qwen
+   58  queued     cpu               -     2m00s  alice        prep
 
 2 running, 2 waiting.
 
@@ -878,7 +860,9 @@ time the workspace starts.
 A job runs in a container built from the same code path as its owner's
 workspace: same image, same files, same account, same limits.
 
-* `$HOME` is `/workspace`, the working directory is wherever `submit` was run,
+* `$HOME` is the workspace (`/home/<username>`, or the mapped home's own
+  path; `/workspace` is a symlink to it), the working directory is wherever
+  `submit` was run,
   and the script is executed through a login shell, so `pip install --user`
   packages and anything in the user's profile are already there.
 * Memory, CPU cores, process count and disk-I/O caps come from the owner's
@@ -915,8 +899,8 @@ score = recent usage (decayed)  +  what they are running right now
 * **Ties fall back to submission time**, so within a single user the queue is
   still first-come-first-served.
 
-Measured on the reference host with exactly the case above, user A submitting
-ten jobs and user B one afterwards:
+The case above, user A submitting ten jobs and user B one afterwards, with
+`JOB_MAX_RUNNING_PER_USER=2`:
 
 ```
 RUNNING:  job 1  _userA  A-1
@@ -991,10 +975,8 @@ GPU and is held to that figure. There is no default and nothing is guessed:
 | `submit train.sh --gpu-memory 20000 --gpus 2` | 2 GPUs, 20 GB **on each** |
 | `submit train.sh --gpus 2` | refused: `--gpus` needs `--gpu-memory` |
 
-The platform used to fill in 4096 MB when a job said nothing, which meant the
-commonest way to get a reservation wrong was to say nothing at all. A number
-nobody chose is worse than no number, because it still reads as a decision and
-the scheduler still fits other work against it.
+There is deliberately no default figure: a number nobody chose still reads as a
+decision, and the scheduler would fit other work against it.
 
 The figure is enforced. These cards cannot partition memory in hardware, since
 MIG is not available on consumer GPUs and `nvidia-smi` says as much
@@ -1003,24 +985,19 @@ word. The platform does instead: every `GPU_GUARD_INTERVAL` seconds, one second
 by default, it reads what each job holds and stops any job past its allowance,
 telling it what it really used.
 
-Sampling, not prevention, and the difference shows in the numbers. Nothing
-stops the allocation itself, so a job is only seen once the driver has handed
-the memory over, and frameworks take it in large blocks: two jobs on this host,
-one having asked for 2 GB and the other for 4, were both caught at the same
-6468 MB, because a single allocation carried each of them from under its
-allowance to well past it. There was no moment in between at which either could
-have been caught. Sampling faster would not have helped; the residual gap is
-the size of one allocation, not the length of the interval.
+This is sampling, not prevention. Nothing stops the allocation itself, so a job
+is only seen once the driver has handed the memory over, and frameworks take
+memory in large blocks: a single allocation can carry a job from under its
+allowance to well past it. Sampling faster does not close that gap; the residual
+is the size of one allocation, not the length of the interval.
 
 > Stopped: it was holding 30000 MiB of GPU memory after asking for 4096 MiB, and
 > the scheduler had fitted other work beside it on that figure. Run it again
 > with --gpu-memory 30208.
 
-Left alone, the reservation is an honour system that pays to understate. Ask
-for 4 GB, take 30, and you reach the front of the queue sooner; the job
-admitted into the space you claimed not to need is the one that dies of it.
-Before we changed this, a job that reserved 512 MB allocated 1.5 GB and ran
-happily to completion.
+Without enforcement a smaller request is placed sooner, and the job admitted
+into the space another job claimed not to need is the one that runs out of
+memory. Stopping the overrunning job puts the cost on the job that caused it.
 
 The allowance is `max(request × JOB_GPU_OVERRUN_FACTOR, request +
 JOB_GPU_OVERRUN_GRACE_MB)`, which is 1.1 and 1024 MB by default. The factor
@@ -1040,20 +1017,20 @@ neighbour is the side that matters here.
 stopping it, for deployments that would rather finish a run than keep
 reservations honest.
 
-The measurement is taken inside each container. The backend runs in its own
-PID namespace and nvidia-smi hides compute processes it cannot see there, so
-from the backend the process list is simply empty and every attempt to
-attribute VRAM from the host-wide view came back with nothing at all. A
-container can always see its own processes, and the platform already knows
-which physical card each one was pinned to.
+How it is measured: one host-wide `nvidia-smi --query-compute-apps` per
+interval, each PID mapped to its container through `/proc/<pid>/cgroup` (see
+[Who is on which GPU](#who-is-on-which-gpu)). One query covers every card and
+every job, so the cost does not grow with the queue. If the backend is not in
+the host PID namespace the driver hides those processes; the guard then reports
+that it cannot measure and stands down, rather than reading an empty list as
+"every job holds nothing".
 
 ### Reading a job's output safely
 
 Job output can be gigabytes — a training run printing a line per step — so the
 platform never reads the file. It seeks to the end and takes the last
 `JOB_OUTPUT_TAIL_BYTES` (128 KB), then the last `JOB_OUTPUT_TAIL_LINES` (500)
-lines of that. Memory used is bounded by the window, not by the file: a 411 MB
-log is served in 1 ms with no measurable allocation. The response says how big
+lines of that. Memory used is bounded by the window, not by the file. The response says how big
 the file really is and that it was truncated, and points at `tail -f` for the
 rest.
 
@@ -1078,23 +1055,19 @@ the platform reads the stream; the backend only stats the file and reads its
 tail when somebody asks. The output is written exactly once.
 
 A progress bar that rewrites one line with `\r`, which covers tqdm and most C
-tools, is one line in the file. We counted: 1000 tqdm updates produce 3
-newlines, not 1000. The dashboard collapses it to its final state, so a bar
+tools, is one line in the file. The dashboard collapses it to its final state, so a bar
 drawn a million times still shows up as one line. A tool that notices it is not
 writing to a terminal and prints a line per update really does produce a line
 per update, and nothing can distinguish those from genuine log lines, which is
 why the view shows the last 500 of them instead of trying.
 
-Buffering does not help, and we measured rather than assumed. 100,000 progress
-frames cost 0.10 s of CPU across roughly 50,000 `write()` calls; a 64 KB buffer
-brings that down to 0.05 s. Saving 50 ms is not worth much. The bytes are
-identical either way, 6.5 MB, and the bytes are the part that matters because
-they land in the user's disk quota. Buffering would also delay `tail -f`, which
-is how people actually watch a job. So the direct write stays.
+Buffering the output would save little CPU, would not change the number of
+bytes written (which is what lands in the user's disk quota), and would delay
+`tail -f`, which is how people watch a job. So the direct write stays.
 
-The volume does cost something. At 3000 iterations a second a `\r` bar writes
-about 195 KB/s. That is 0.2% of a container's 80 MB/s write cap, so it cannot
-starve anyone else's disk, but it is 700 MB an hour against its owner's quota.
+The volume can still matter: a fast `\r` progress bar writes a steady stream
+that is far below the container's write cap but adds up against its owner's
+disk quota over a long run.
 Past `JOB_OUTPUT_WARN_MB` the job carries a note saying so, which shows up in
 `queue` and on the dashboard. `JOB_MAX_OUTPUT_MB` stops such a job outright and
 is off by default, because killing a twelve-hour training run over a verbose
@@ -1141,36 +1114,6 @@ filesystem nobody else can see, and `docker stats` for telemetry. It needs
 `/var/run/docker.sock` in the backend and `gpu-jupyter:latest` pre-built, both
 of which `deploy.sh` arranges.
 
-There used to be a second backend, selected with `SESSION_BACKEND=process`,
-which ran `jupyter lab` as a subprocess inside the platform's own container. It
-was removed rather than repaired, because what it could not do was the one thing
-a session backend is for, which is keeping users apart:
-
-* **Every workspace shared one filesystem.** `JUPYTER_DATA_DIR/<user>` is created
-  0755 and nothing narrowed it, so any user could read every other user's
-  notebooks and data, their Jupyter log, and the `.jupyter` config holding the
-  argon2 hash of their account password. Probed on the reference host as an
-  arbitrary uid: the whole tree was readable. Worse, the uid a user's account got
-  was the next one `useradd` handed out, which eventually collided with the uid
-  owning `JUPYTER_DATA_DIR` itself — and the owner of a directory can delete what
-  is in it.
-* **Every workspace shared one PID and one network namespace.** `ps` showed other
-  users' command lines, and every other user's Jupyter was one TCP connection to
-  `127.0.0.1` away.
-* **The RAM cap was `RLIMIT_AS`**, an address-space ceiling per process rather
-  than `memory.max` on the workspace. It is also a poor fit for CUDA: PyTorch
-  reserves tens of gigabytes of *virtual* address space, so a sensible-looking
-  cap makes `torch.cuda.init()` fail instead of limiting real memory. There was
-  no `cpu.max`, no disk quota, no SSH and no image choice.
-
-Closing those holes means giving each user their own mount, PID and network
-namespace and moving the limits into cgroups, which is a description of a
-container runtime. Docker is already a dependency, so the platform uses it and
-does not carry a second, weaker answer beside it. `SESSION_BACKEND` and
-`JUPYTER_PORT_START`/`JUPYTER_PORT_END` are deleted from `.env` on the next
-`./deploy.sh`; a session the old backend started is reported stopped, and its
-owner presses **Start** once to get a container.
-
 ### GPUs that "detach after a while"
 
 There are two different faults behind that sentence, and they want different
@@ -1189,11 +1132,8 @@ back:
    seconds and restarts anything that exited, OOM kills included.
 4. **GPU guard**: every `GPU_GUARD_INTERVAL` seconds one host-wide
    `nvidia-smi` is mapped back to containers through `/proc/<pid>/cgroup`, and
-   any job past its allowance is stopped. It needs the backend in the host PID
-   namespace, which `docker-compose.gpu.yml` already gives it for the GPU
-   monitor. Where it cannot run it says so rather than reporting that every job
-   holds nothing, and the guard stands down instead of falling back to a
-   `docker exec` per job per second.
+   any job past its allowance is stopped (see
+   [`--gpu-memory`](#--gpu-memory-decides-everything-and-is-held-to)).
 
 **systemd revoking the device.** The more common one, and it is not the driver
 at all. The NVIDIA runtime hook grants a container access to `/dev/nvidia*`
@@ -1222,10 +1162,9 @@ CID=$(docker inspect -f '{{.Id}}' gpu-jupyter-alice)
 systemctl show "docker-$CID.scope" -p DeviceAllow | tr ' ' '\n' | grep 195:
 ```
 
-Entries there mean it is protected. Nothing means it was created before this
-existed, in which case restarting the workspace is what fixes it; a container
-already in that state has to be recreated, because nothing inside can grant
-itself the device back.
+Entries there mean it is protected. A container that has already lost its
+devices has to be recreated (stop and start the workspace), because nothing
+inside can grant itself the device back.
 
 **And when the reading fails anyway**, the platform says so instead of
 reporting an empty machine. It keeps the last good figures, marks them stale,
@@ -1242,15 +1181,16 @@ With `SSH_ENABLED=true`:
 ssh -p <port> <username>@<server-ip>
 ```
 
-* Port and per-session password appear on the dashboard once the session runs.
-  The port comes from `SSH_PORT_START`–`SSH_PORT_END` and is **assigned on the
+* The port appears on the dashboard; sign in with the account password or a
+  registered key. The port comes from `SSH_PORT_START`–`SSH_PORT_END` and is **assigned on the
   user's first start and then kept**: stopping and restarting a workspace gets
   the same port back, and ports already assigned are not offered to anybody
   else. A client keys `known_hosts` by host *and* port, so a moving port reads
   to the user as `REMOTE HOST IDENTIFICATION HAS CHANGED`. The pool takes a port
   back only when the account is deactivated or moved to the trash.
-* **Public keys** — paste an OpenSSH key on the dashboard; it is installed at
-  the next session start. Password auth remains as fallback.
+* **Public keys** — paste an OpenSSH key on the dashboard; it is written to
+  `/platform/authorized_keys` and applies immediately. Password auth remains
+  as a fallback unless `SSH_PASSWORD_AUTH=false`.
 * **Hardening** (`sshd_tail.conf`): `DisableForwarding yes` blocks tunnelling
   into the Docker network, root login is off, keep-alives hold long sessions.
 * Ports `2222–2321` must be open in the firewall.
@@ -1297,29 +1237,25 @@ theirs to fill in, and all the platform checks is that the path sits under
 ### Persistent data and installed libraries
 
 SSH and JupyterLab share one directory. The user's home *is* the directory the
-notebook browser serves, so a file you create in a terminal is the same file
+notebook browser serves, and it appears inside the container at
+`/home/<username>` (or, for a [mapped home](#using-a-directory-that-already-exists),
+at the path it has on the host, because conda, pip and virtualenvs record
+absolute prefixes). `/workspace` is a symlink to the same directory, so a file you create in a terminal is the same file
 JupyterLab lists. There is no second tree and no hidden folder to go looking
 for.
 
 | Host (`jupyter_data/<user>/`) | In container | Contents |
 |---|---|---|
-| `<user>/` | `/workspace`, which is also `$HOME` | Notebooks, datasets, code, and the dotfiles too: `.local` (`pip install --user`), `.ssh`, `.jupyter`, `.cache` |
+| `<user>/` | `/home/<username>` (`$HOME`; `/workspace` links to it) | Notebooks, datasets, code, and the dotfiles too: `.local` (`pip install --user`), `.ssh`, `.jupyter`, `.cache` |
 | `<user>/.ssh_host_keys/` | `/etc/ssh/host_keys` | Stable SSH host keys |
 
 Dotfiles stay out of the way: JupyterLab runs with `allow_hidden_files: false`,
 so the file browser shows only the user's own work.
 
-The entrypoint runs Jupyter with `HOME=/workspace` and `PIP_USER=1`, so
+The entrypoint runs Jupyter with `HOME` set to the workspace and `PIP_USER=1`, so
 user-installed libraries survive container recreation. The exceptions are
 things that belong in the image itself, like CUDA stacks and `apt` packages;
 for those, build a custom image and add it to `JUPYTER_IMAGES`.
-
-Deployments created before this layout had a second bind mount at
-`<user>/.home`. The backend folds it back into the single directory at the next
-session start, moving `.local`, `.ssh`, `.jupyter` and the shell dotfiles up
-one level. An entry whose destination already exists is left behind in `.home`
-rather than overwritten, and the directory itself is removed only once it is
-empty.
 
 ---
 
@@ -1333,7 +1269,7 @@ spawn a process with a different value. The isolation here is layered:
 | GPU device access | Docker device request pinning GPU UUIDs — a kernel-level device cgroup, not an environment variable |
 | GPU visibility | `CUDA_VISIBLE_DEVICES`, renumbered from 0 inside the container |
 | RAM / CPU / fork bombs | cgroups `--memory`, `--cpus`, `pids.max` on the whole container |
-| Disk | Per-container BPS/IOPS ceilings, blkio weight, per-user disk quota |
+| Disk | Per-container BPS/IOPS ceilings; per-user disk quota (measured, not a filesystem quota) |
 | Process identity | Unprivileged per-user account inside the container; `no-new-privileges` |
 | Network | Jupyter is never published; only the backend reaches it, by Docker DNS |
 | Platform auth | JWT with a `token_version` claim — deactivation, password reset or an admin-flag change revokes live tokens at once |
@@ -1347,9 +1283,19 @@ spawn a process with a different value. The isolation here is layered:
 
 ### Known trade-offs
 
+The isolation above is between tenants. The platform's own backend is the
+trusted component, and these are the costs of that:
+
 * The backend mounts `/var/run/docker.sock` and runs as root, so remote code
-  execution in the backend is root on the host. A socket proxy that narrows
-  the Docker API surface is worth considering.
+  execution in the backend is root on the host. Narrowing this with a Docker
+  socket proxy, or running the daemon rootless, is possible but not done here;
+  rootless Docker in particular changes how cgroup limits and GPU device
+  requests are delegated and would need the limits re-verified.
+* With `docker-compose.gpu.yml` the backend shares the **host PID namespace**
+  (`pid: host`) so that it can attribute GPU processes to containers. It can
+  therefore see, and as root signal, every process on the host. This adds no
+  privilege the Docker socket does not already give it, but it widens what a
+  compromised backend can observe directly.
 * Rate limiting is in-process; it assumes the documented single uvicorn worker.
   Multiple workers or replicas need a shared store.
 * SQLite with one worker is fine up to a few dozen users; beyond that move
@@ -1378,20 +1324,10 @@ image and throws it away afterwards, so the running stack is never touched. For
 cd backend && pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-One rough edge while it lasts: **the suite depends on the order its cases run
-in.** `alice` is created inside `test_full_admin_workflow` rather than in a
-fixture, and a dozen later cases log in as her, so the whole file passes while
-a selection of it does not:
-
-```bash
-./scripts/run_tests.sh -q                 # 114 passed
-./scripts/run_tests.sh -q -k quota        # 2 failed, 1 passed
-```
-
-That makes `-k` useless for narrowing down a failure, it means one broken case
-takes a dozen unrelated ones down with it, and it rules out parallelising or
-randomising the run later. The fix is a module-scoped fixture that creates the
-shared users, leaving the CRUD checks to create a user of their own.
+Every case can run on its own (`-k`) or in any order: accounts a case needs come
+from fixtures that put them into a known state, and no job, session or usage
+row survives from one case to the next. CI runs the suite in file order and in
+reverse on every push (`.github/workflows/tests.yml`).
 
 The end-to-end script is the other half. It needs a running deployment, and it
 runs from inside the backend container so that it exercises the real network
@@ -1413,7 +1349,7 @@ real GPU container for a temporary account.
 The suite covers auth and throttling, token revocation, the password policy,
 GPU-index validation, session lifecycle, secret encryption, quota enforcement,
 usage accounting, job admission and the budgets that hold it back, the audit
-trail and command redaction. It runs 111 cases at the time of writing.
+trail and command redaction.
 
 ---
 
@@ -1427,9 +1363,9 @@ The dependencies it installs at build time (FastAPI, SQLAlchemy, React,
 JupyterLab and the rest) stay under their own licenses; none of their source is
 bundled here.
 
-If the platform is useful in work you publish, a citation is appreciated:
-
-> updating
+If the platform is useful in work you publish, please cite it using
+[`CITATION.cff`](CITATION.cff) (GitHub's *Cite this repository* button reads
+it). Each release is archived with its own DOI, listed on the release page.
 
 ---
 
@@ -1491,40 +1427,6 @@ Fix: `sudo bash scripts/host_firewall_setup.sh`, which adds
 Per-user SSH (`2222–2321`) needs the same treatment on INPUT if the host blocks
 inbound by default: `sudo bash scripts/host_firewall_setup.sh --with-ssh`.
 
-### 502 Bad Gateway on every /api call, while the API itself is fine
-
-Symptom: `curl http://127.0.0.1:8000/api/health` answers 200, the SPA loads,
-and every `/api/*` request through the site returns 502. The frontend
-container's error log names an upstream address that no longer exists:
-
-```
-connect() failed (113: Host is unreachable) while connecting to upstream,
-upstream: "http://172.18.0.6:8000/api/user/me/gpu"
-```
-
-Cause: nginx resolves a literal hostname in `proxy_pass` **once**, when it
-loads its configuration, and caches that address for the life of the worker.
-Recreating the backend container — any `docker compose up --build backend` —
-can bring it back on a different address, and nginx keeps dialling the old
-one. DNS inside the container is correct the whole time, which is what makes
-it confusing: `getent hosts backend` and `wget http://backend:8000` both work
-from the same container that is returning 502.
-
-Fixed in `frontend/nginx.conf` by resolving per request instead:
-
-```nginx
-resolver 127.0.0.11 valid=10s ipv6=off;   # Docker's embedded DNS
-set $api_backend http://backend:8000;
-proxy_pass $api_backend$request_uri;      # a variable defeats the cache
-```
-
-`$request_uri` is required: with a variable in `proxy_pass`, nginx stops
-appending the request URI on its own.
-
-If an older deployment hits this before the fix is in, `docker exec
-<frontend> nginx -s reload` restores service immediately — it re-resolves, and
-drains existing connections rather than dropping them.
-
 ### JupyterLab is blank, or the login page has no styling
 
 Every asset ending in `.js` / `.css` / `.ico` returns 404 while the HTML loads.
@@ -1544,78 +1446,20 @@ The shipped configs use `location ^~ /jupyter/` and `location ^~ /api/`, and
 `^~` is what stops a regex location from winning. If you hand-write a proxy
 config in front of the platform, keep that modifier.
 
-### Jupyter rejects the correct password
-
-Jupyter dispatches on a prefix: `passwd_check()` only treats a hash as argon2
-when it starts with `argon2:`, and otherwise falls through to a legacy
-`algorithm:salt:digest` branch that cannot parse it and returns `False`. A hash
-stored without the prefix therefore rejects every password, including the right
-one.
-
-The platform stores the prefixed form, and `init_db.py` repairs rows written by
-an earlier version on startup. **A session started before the repair keeps the
-old hash**, because the entrypoint bakes it into the container's
-`jupyter_server_config.json` at creation time — stop and start the session once
-(which recreates the container) and the password works.
-
 ### An SSH key was added but SSH still asks for a password
 
-Keys are installed into `jupyter_data/<user>/.home/.ssh/authorized_keys`, which
-is bind-mounted into the running container, the moment they are saved — sshd
-re-reads that file on every authentication, so no restart is needed. The API
-response says which happened (`applied_live`). The backend also re-syncs every
-registered key into the home volumes at startup, so a key saved while the
-backend was down still lands.
+Keys are written to `jupyter_data/<user>/.platform/authorized_keys`, mounted
+in the container as `/platform/authorized_keys`, the moment they are saved.
+sshd reads that file (and then `~/.ssh/authorized_keys`) on every
+authentication, so no restart is needed.
 
 If it still prompts for a password, check ownership and modes inside the
 container — sshd's `StrictModes` rejects a key file that is group-writable or
 not owned by the authenticating user:
 
 ```bash
-docker exec gpu-jupyter-<user> ls -la /home/<user>/.ssh/
-# authorized_keys must be -rw------- and owned by <user>
-```
-
-### SSH and scp stop working after a workspace has been open a while
-
-```
-kex_exchange_identification: read: Connection reset by peer
-Connection reset by <host> port 2222
-```
-
-The connection is refused before authentication, so it is not a key or a
-password problem: sshd cannot **fork** the process that would serve the login.
-
-The cause is what sits at PID 1. The entrypoint ends in `exec gosu … jupyter
-lab`, so PID 1 used to be JupyterLab — a Python process that never calls
-`wait()`. sshd daemonises, and the process serving each login is orphaned onto
-PID 1 when it finishes. Nobody reaps it, so **every SSH, scp or sftp connection
-leaves one zombie behind, permanently**. A zombie still occupies a `pids.max`
-slot, so a workspace that has served a few hundred connections — an editor with
-a remote-SSH session reconnecting all day gets there quickly — hits its process
-ceiling and can no longer fork anything at all.
-
-Confirm it from the host:
-
-```bash
-cid=$(docker inspect -f '{{.Id}}' gpu-jupyter-<user>)
-cg=/sys/fs/cgroup/system.slice/docker-$cid.scope
-cat $cg/pids.current $cg/pids.max      # equal → the ceiling is the problem
-cat $cg/pids.events                    # "max <n>" counts how often it was hit
-docker top gpu-jupyter-<user> | grep -c defunct
-```
-
-`docker exec` into such a container answers `sh: 1: Cannot fork`, which is the
-same symptom from the other side.
-
-Containers now start with `init: True`, so PID 1 is `docker-init` (tini), which
-reaps orphans and keeps the count flat. **The setting applies at creation**, so
-a session started before this fix keeps leaking — stop and start it once to
-recreate the container. To unblock a stuck session without killing what is
-running inside it, raise the ceiling in place; it takes effect immediately:
-
-```bash
-docker update --pids-limit 4096 gpu-jupyter-<user>
+docker exec gpu-jupyter-<user> ls -la /platform/ /home/<user>/.ssh/
+# authorized_keys must not be group- or world-writable
 ```
 
 ### Kernels will not connect
@@ -1646,610 +1490,16 @@ created through the Docker API, not compose). Stop them from
 
 ---
 
-## Development history
-
-Everything below happened before the first release. It is written down because
-a good deal of it was repairing things an earlier README cheerfully described
-and the code did not actually do, and because the reasoning behind a decision
-is usually what you want when the behaviour surprises you later.
-
-### Blocking defects (the container backend could not run at all)
-
-| Problem | Effect | Fix |
-|---|---|---|
-| The WebSocket proxy called `httpx.AsyncClient.ws_connect`, which does not exist | `AttributeError` swallowed by a bare `except` → **no kernel or terminal ever connected**. Pages loaded; nothing executed | Reimplemented on the `websockets` client, with subprotocol negotiation (`v1.kernel.websocket.jupyter.org`) and binary frames |
-| `docker-entrypoint.sh` built a bash array under `#!/bin/sh` | Ubuntu's `/bin/sh` is dash: `Syntax error: "(" unexpected`. **Every user container died before Jupyter started** | `#!/bin/bash` |
-| The proxy re-instantiated a SQLAlchemy model with a non-column keyword | `TypeError` → **every `/jupyter/*` request returned 500**. The test suite missed it because it monkeypatched that exact function | Plain dataclass snapshot |
-| User containers were created with **no device requests** | On a host whose default Docker runtime is `nvidia` (common, and the case here) every container saw **all** GPUs and `CUDA_VISIBLE_DEVICES` was trivially bypassed. On other hosts they saw none | Docker device requests pinning GPU **UUIDs**, plus `NVIDIA_VISIBLE_DEVICES=void` for CPU-only users |
-
-### Security
-
-* JWTs carry `token_version`; deactivation, password reset and admin-flag
-  changes revoke live tokens immediately. Previously a deactivated user kept
-  working until their token expired.
-* Login throttling and lockout per username and per IP.
-* Password policy raised from 6 characters to 10 with a letter and a digit.
-* Password-mode sessions no longer bypassed platform authorisation entirely.
-  Browser navigation now authenticates through an HttpOnly cookie scoped to
-  `/jupyter`, and the proxy supplies the upstream Jupyter credential itself —
-  which also fixed `_xsrf` failures on every API POST.
-* Session tokens and SSH passwords encrypted at rest; existing plaintext rows
-  are migrated on first boot.
-* SSH ports are allocated from the Docker daemon's real port map. The old check
-  bound a socket inside the backend's own network namespace, which says nothing
-  about the host — two users could be handed the same port.
-* Every GPU index in an assignment is validated; only `max()` was checked, so
-  `[0, 7]` on a 2-GPU host was accepted.
-* Command lines are redacted before display — the GPU monitor was about to show
-  `--ServerApp.token=…` to admins.
-* Mock GPU data is now opt-in (`ALLOW_MOCK_GPU`). It used to appear silently
-  whenever `nvidia-smi` failed, making a broken driver look healthy.
-
-### Resource management (the half the name promised)
-
-* Background telemetry loop → host and per-user CPU, RAM, PIDs, disk I/O and
-  disk usage, surfaced in both dashboards and on `/api/*/resources`.
-* GPU processes are attributed to platform users by matching `nvidia-smi` host
-  PIDs against `docker top`. The old code read `/proc/<pid>` from inside the
-  backend's PID namespace, where those PIDs do not exist, so everything showed
-  as `unknown`.
-* `last_activity` is actually written now, and an opt-in idle reaper reclaims
-  forgotten sessions.
-* Per-user disk quota, plus weekly GPU-hour and CPU-hour budgets on batch
-  jobs, applied at submission and again while a job runs.
-* `usage_records` ledger and an admin usage report.
-* `audit_logs` table and an admin audit view.
-* Sessions survive a backend restart; the backend reconciles with reality at
-  startup instead of stopping every session on shutdown. Previously **every
-  platform update killed every running notebook**.
-* Selectable Jupyter images from a server-side allow-list.
-* `pids.max` on user containers — until then there was no fork-bomb ceiling on
-  a workspace container.
-
-### Deployment
-
-* `HTTP_MODE` splits the web tier: `host` publishes only `WEB_BIND:WEB_PORT`
-  for an existing web server, `edge` keeps the bundled nginx behind a compose
-  profile. A ready host server block ships in `nginx/host/gpu-platform.conf`.
-* Both nginx configs gained WebSocket upgrade on `/api/` — the live-resource
-  socket was being dropped — using a `$connection_upgrade` map so ordinary REST
-  keep-alive is not broken.
-* `frontend/.dockerignore`: `COPY . .` ran after `npm ci` and copied the host's
-  `node_modules` over the freshly installed one.
-* The API and backend ports bind to loopback by default.
-* `deploy.sh` reports when it rewrites a stale `JUPYTER_DATA_HOST_DIR` — the
-  value in this repo pointed at a macOS path from another machine, which would
-  have broken every session silently.
-* `.gitignore` extended; the project is now under version control.
-
-### Post-deployment fix: 504 behind the host's nginx
-
-Found on the reference host after going live, and worth recording because the
-symptom pointed everywhere except the cause.
-
-The host runs a hardened firewall — `-P INPUT DROP`, `-P FORWARD DROP`,
-`-P OUTPUT DROP` — whose `OUTPUT` chain allows `lo`, ICMP and the external
-interface, but nothing for a Docker bridge. Every other stack on the machine
-uses `network_mode: host`, so no bridge had ever been exercised and the gap was
-invisible.
-
-Consequence: `docker-proxy` (a host process) could not reach the container.
-The host's nginx connected to `127.0.0.1:7080` fine, then waited forever for a
-response header → **504**, while `ping 172.18.0.2` answered in 0.03 ms and the
-containers were healthy and talking to each other normally.
-
-Fixes shipped:
-
-* `scripts/host_firewall_setup.sh` — adds `OUTPUT -o gpu-platform0 -j ACCEPT`
-  and persists it, with `--check` / `--revert` / `--with-ssh`. It deliberately
-  does **not** open INPUT from the bridge, so user containers still cannot
-  reach services on the host; replies to host-initiated connections are already
-  matched by the existing `RELATED,ESTABLISHED` rule.
-* The bridge interface name is pinned to `gpu-platform0` in
-  `docker-compose.yml`. Docker derives it from the network ID by default
-  (`br-<hash>`), so a persisted firewall rule would have silently stopped
-  matching the next time the network was recreated — the same outage, weeks
-  later, with no obvious trigger.
-* `deploy.sh` now verifies after startup that the host can actually reach the
-  published port, and when it cannot, inspects the firewall and prints the
-  cause and the exact command instead of leaving a 504 to be debugged.
-
-### Post-deployment fixes: Jupyter unusable in the browser
-
-Three defects that only surfaced once real users opened the UI. All three were
-invisible to the earlier test suite because it fetched `/api/status` and
-`/lab` — paths with no file extension, over a token the tests supplied by hand.
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| JupyterLab loads a blank page; login page unstyled | The frontend server's static-asset cache block is a **regex** location, and nginx matches regex locations before prefix ones — so it claimed `/jupyter/<user>/static/**.js|css|ico` and served 404 from the local document root. Masked in edge mode, where the edge nginx proxied `/jupyter/` to the backend and the frontend container never saw those URLs | `location ^~ /jupyter/` and `^~ /api/` in all three shipped configs; `^~` is what stops a regex location from winning |
-| Correct Jupyter password rejected | The platform stored a bare argon2 digest. `passwd_check()` only takes the argon2 branch for hashes prefixed `argon2:`; without it the legacy `algorithm:salt:digest` branch cannot parse the value and returns `False` — so *every* password was wrong | Store the prefixed form; `init_db.py` repairs existing rows on startup |
-| SSH key added, SSH still asks for a password | The key reached the container only as an environment variable at creation time, so a key saved after the session started did nothing until the next restart — with no feedback explaining why | The key is written straight into the bind-mounted `authorized_keys` when saved, so a running session picks it up (sshd re-reads the file per authentication); the API reports `applied_live`, and every registered key is re-synced at startup. Clearing a key now removes the file too, instead of leaving a revoked key working out of the persistent volume |
-
-Regression tests were added for each: the end-to-end check now fetches every
-asset the JupyterLab page references, drives the full password login flow
-(form → `_xsrf` → POST → session cookie), and the unit suite pins the hash
-format.
-
-### One password per user
-
-Three passwords for one person (platform, Jupyter, SSH) was two too many, and
-the two extras existed only because the account password is stored as bcrypt,
-which cannot be reshaped into what Jupyter and sshd need.
-
-The platform now derives those formats at the moments the plaintext is
-legitimately available — create, change, reset, and successful login (which
-backfills existing accounts) — and stores only the non-reversible results:
-argon2 for Jupyter, sha512-crypt for the container's `/etc/shadow`. The
-dashboard no longer reveals an SSH password, Jupyter links no longer carry a
-token, and a password change is pushed into the running container so SSH
-follows without a restart. A user-chosen Jupyter password still exists as an
-opt-in second factor. `SSH_PASSWORD_AUTH=false` turns SSH password auth off
-for key-only deployments.
-
-### One directory for SSH and JupyterLab
-
-Reported after the first users tried both: a directory created over SSH never
-appeared in JupyterLab, and JupyterLab could not save a notebook
-("Permission denied"). Two independent causes, both structural:
-
-* **Two file trees.** SSH landed in `/home/<user>` while JupyterLab served
-  `/workspace`. They were different bind mounts of `<user>/.home` and `<user>/`
-  — and since `.home` is a *hidden subdirectory* of the workspace, everything
-  made in a shell was invisible in the notebook browser. Home and Jupyter root
-  are now the same directory; dotfiles live in it and are hidden from the file
-  browser. An existing split home is folded back automatically.
-* **Wrong owner.** `<user>/` is created by the backend as root, so `/workspace`
-  was owned by root (or by whichever account ran the deploy) while the
-  container account is uid 1000 — readable at mode 0755, not writable. The
-  backend now chowns it at every session start, with a one-time recursive
-  repair guarded by a marker so a directory full of datasets is not walked on
-  every launch. The entrypoint's recursive chown was narrowed to the dotfile
-  directories for the same reason.
-
-### Terminals, and limits that were only nominal
-
-* **No Terminal in the JupyterLab launcher.** The image copied `bin`, `lib` and
-  `share` out of the build stage but not `etc` — and
-  `etc/jupyter/jupyter_server_config.d/*.json` is how server extensions enable
-  themselves. All of them were silently off: `jupyter_server_terminals`
-  (so `/api/terminals` 404'd and the launcher had no tile), `jupyter-lsp`,
-  `notebook_shim`. JupyterLab itself still worked only because `jupyter lab`
-  loads its own extension directly.
-* **Disk I/O limits were never applied.** `io.max` in every container was
-  empty. The data directory resolved to `/dev/nvme0n1p2` — a *partition* — and
-  cgroup v2 rejects a partition there ("no such device"), so the daemon failed
-  the create and the fallback stripped the I/O settings one by one until the
-  container started with none. Partitions are now resolved to the whole disk.
-  `blkio_weight` is skipped outright on cgroup v2, where it needs BFQ, instead
-  of being offered and rejected on every session start.
-* **Limits are now verified, not assumed.** `effective_limits()` reads back
-  what the daemon applied per container and surfaces it in both dashboards and
-  the API, and the end-to-end suite asserts against the cgroup files
-  themselves.
-* **`platform-limits`** ships in the image and prints on every interactive SSH
-  login, because `df`/`free`/`nproc` are not cgroup-aware and made a correctly
-  limited container look unlimited.
-* **Disk quota is enforced continuously**, not only at session start, via
-  `DISK_QUOTA_ACTION`. It remains a soft quota; the honest limits of that are
-  documented rather than glossed over.
-
-### CPU limits that meant a quarter of what was asked
-
-The assignment form's only CPU field was *CPU limit (seconds)* — an
-`RLIMIT_CPU` budget belonging to the process backend that ran a workspace as a
-subprocess. A workspace container had no core setting of its own, so it derived
-one: `seconds / 3600`, floored at 0.25. An administrator setting **4**, meaning four cores, got a workspace
-throttled to **0.25 cores**, while the form still read 4. Found on the reference
-host, where `cpu.max` was `25000 100000`.
-
-Assignments now carry a `cpu_cores` field, which is what the cgroup cap is set
-from. Existing values are re-read on startup: a number no larger than the
-host's core count cannot be a CPU-seconds budget (four seconds of CPU would end
-a session instantly), so it is moved to `cpu_cores`. Both assignments on the
-reference host were rescued that way.
-
-`cpu_limit_seconds` itself is gone from the admin form. It is an `RLIMIT_CPU`
-ceiling on one process tree, only the process backend ever applied it, and that
-backend has since been removed, so the field was a number an administrator could
-type, save and see rendered back while nothing enforced it. What people wanted
-from it, a cap on how much compute somebody may consume, is now
-`cpu_hours_quota`: a CPU core-hour budget per period that sits beside the
-GPU-hour one and is enforced the same way. The column stays so old assignments
-still load.
-
-### A budget on the queue, not on somebody's desk
-
-The GPU-hour quota used to be charged to everything with a GPU in it, session
-or job, and checked once, at the moment work started. Two things were wrong
-with that.
-
-**It was billing the wrong activity.** A workspace is a person's own seat at
-the machine, opened deliberately and bounded already by their assignment.
-Charging them by the hour for sitting in it makes the person who leaves a
-notebook open to read yesterday's results pay the same as the person running
-fifty jobs, and it pushes people into working in ways that hide from the
-meter. What a budget is actually for is the queue: work handed over in bulk to
-run unattended, where one submission loop takes the machine from everybody else
-without anybody meaning any harm. So the budgets are charged to jobs, and an
-interactive session costs nothing. A session nobody is using is still a waste,
-but it is the idle reaper's waste to reclaim, and `IDLE_TIMEOUT_MINUTES`
-already does.
-
-**And a check at admission decides nothing about what happens next.** A job
-admitted with twenty minutes of budget left ran for three days. The scheduler
-now asks on every pass, and what it does when somebody has run out is take the
-job off the machine rather than fail it: the job carries the reason, the
-scheduler holds it while the owner is still out, and it comes back by itself
-when the period refills. The hours it already ran are booked either way, so
-neither outcome is free. A running job also counts towards the budget as it
-goes, rather than only when it ends, which is what stops a long run from
-outrunning the budget it started inside.
-
-The period moved from a calendar month to a week at the same time. A month is
-too long to be a lever: somebody who burns their allowance on the 3rd is locked
-out for four weeks and the operator's only recourse is to edit the quota, while
-a week forgives a bad estimate without anybody intervening. Weeks break at
-local midnight on Monday, and a job that straddles the boundary is split
-between the two.
-
-Requeueing is not the answer for every job, though, and the difference is
-what the job is holding. `docker pause` freezes a container where it stands
-and keeps its memory, so a **CPU-only job is paused** rather than requeued:
-nothing is re-run, nothing is lost, and the only thing it goes on holding is
-its own RAM. A **GPU job cannot be treated that way**, because the memory it
-would keep is a whole card's VRAM: the hours would come off its owner's budget
-while the card went back to nobody, and a job parked frozen across the reset
-would hold one for a week for free. So that one is requeued, and the cost is
-the lost progress, which a checkpoint fixes.
-
-The clock stops with the job either way. Pausing books the stretch it has
-already run and then stops counting, so the days a frozen job spends waiting
-for Monday cost it nothing, and a `runtime_seconds` accumulator carries its
-elapsed time across the gap so its runtime limit is not quietly reset by being
-paused.
-
-### Messages written from the user's seat
-
-Everything a user sees was reviewed and rewritten to describe *their* machine.
-`limits` no longer explains that `nproc` is not cgroup-aware or how many cores
-the host has; it says "CPU 2 cores". Start failures no longer hand over image
-names, daemon errors or thirty lines of startup log — those go to the server log
-for an administrator, and the user gets something they can act on. The session
-payload no longer carries engine state or raw logs at all. `df`, `free`, `nproc`
-and `top` were replaced with cgroup-aware versions that report the allocation,
-and `df` drops the pseudo-mounts that made its output unreadable.
-
-### A job queue, so idle GPUs get used
-
-Static assignments left cards idle while users without one had no way to run
-anything. Jobs close that gap: anyone submits a shell script, the scheduler
-starts it when a GPU has room, and it runs under its owner's existing caps.
-
-* `submit` / `queue` / `cancel` run inside the workspace and authenticate with
-  a credential the platform leaves there, rotated per session.
-* A job container is built from the same code path as the interactive
-  workspace, so "limited exactly like its owner" is structural rather than
-  something that has to be kept in sync.
-* Placement is by free VRAM with admitted jobs' allowances treated as
-  reservations, so a 4 GB job can share a card that still has 20 GB free
-  instead of waiting for the whole thing, and two jobs are never admitted into
-  the same space.
-* The queue backfills: a job nothing can fit is skipped, not allowed to block
-  everything behind it.
-* Output is written live to `output.<id>.out` in the submit directory, owned by
-  the user.
-* Job GPU and CPU time is booked into the same usage ledger as interactive
-  sessions, and it is the job rows the weekly budgets are charged against.
-
-### Fair share, CPU accounting and statistics
-
-The first version of the queue served jobs in submission order, which serves
-whoever asked for the most, first: ten jobs from one user pushed everybody else
-behind them. Order is now by a per-user score — recent usage, decayed, plus what
-they hold right now — with ties falling back to submission time so one user's
-own jobs stay first-come-first-served. Admitting a job raises its owner's score
-inside the same scheduling pass, which is what makes the queue interleave.
-
-CPU is now a first-class resource rather than an afterthought: jobs that ask for
-no GPU are admitted against a core pool that also counts open interactive
-workspaces, every run records CPU-seconds beside GPU-seconds, and CPU time is
-converted into the fair-share score so GPU-less work cannot quietly monopolise
-the machine.
-
-Both halves feed the statistics: per-user GPU hours, CPU hours, job counts and
-outcomes, on the dashboard for the user and in **Admin → Usage** for the
-operator, with the queue's own ordering explained in **Admin → Job Queue**.
-
-### A shell that behaves like a shell
-
-The JupyterLab terminal came up as dash: a bare `$`, no colour, no tab
-completion. JupyterLab launches `$SHELL`, the image never set it, and the
-fallback is `/bin/sh`. Setting `SHELL=/bin/bash` and adding `bash-completion`,
-`procps` and the usual command-line tools fixed it; the container's hostname is
-now `workspace`, so the prompt stops naming infrastructure.
-
-More seriously, the cgroup-aware `df` broke installers. It rewrote the
-workspace row into human units for *every* invocation, so `df -Pk` — which a
-script runs precisely because it wants a number — returned `195.1G`, and the
-Miniconda installer died doing arithmetic on it. The friendly view now applies
-only to the plain interactive forms; every other option is passed to the real
-`df` untouched, and `free` follows the same rule. A full Miniconda install was
-run end to end to confirm it.
-
-### Deleting a user: a trash, not a hole in the ground
-
-Deleting an account used to remove the row and nothing else. Three things went
-wrong at once, and all three were confirmed on the live host before the fix:
-
-* **A running job survived its owner.** The job rows cascade-deleted with the
-  user, so nothing could cancel what was left; the container kept running and,
-  had it held a GPU, the scheduler would have counted that card as free while
-  it was still in use.
-* **The history vanished.** `usage_records` and `jobs` cascaded too, so the
-  per-user CPU/GPU totals the statistics are built from changed retroactively
-  every time an account was removed.
-* **The files stayed, unreachable.** The workspace was left under its original
-  name, owned by a container uid — so the administrator could not delete it
-  (`rm: Permission denied`), it counted against a disk already at 96%, and
-  creating a user with the same name again handed them the previous person's
-  files without a word. Eighteen such directories had accumulated, 1.2 GB in
-  one of them.
-
-Deleting now moves the account to a **trash**:
-
-* Everything stops first — the workspace, every queued or running job, and
-  every container the account owns, exited ones included, since a job container
-  is stopped when its job ends but never removed.
-* The row is kept and marked `deleted_at`. The username and email stay taken,
-  so nobody can register the name and inherit the files, and the usage and job
-  history stays attached to its owner.
-* The workspace is **renamed**, not removed: `<user>` becomes
-  `.deleted-<user>-<timestamp>` beside it.
-* Access ends at once: tokens are revoked by version bump, the job credential
-  is destroyed, and login returns "This account has been removed."
-
-**A mapped home directory is never renamed and never deleted** — not on delete,
-not on purge. Only the platform's own sidecar beside it (the job token, the
-limits file, the host keys) is archived, because that is the platform's to move.
-
-**Restore** renames the archive back and reactivates the account; the GPU
-assignment is snapshotted to `restore_state` at delete and replayed, so the
-user comes back configured as they were. If the archive is gone the account is
-restored with a fresh workspace; if something already occupies the name, the
-archive is left alone rather than overwriting it.
-
-**Emptying the trash** is the only destructive step: it deletes the account,
-its history and its archived files, and finally frees the username. `Admin → Trash` also lists workspace directories
-that no account owns at all — the ones the old delete left behind — with their
-size, so they can be removed from the UI instead of needing root.
-
-Every path built from a directory name is re-validated before anything is
-removed: a name containing a separator or `..`, or one that resolves through a
-symlink outside the data root, is refused.
-
-One consequence worth knowing: **automation that deletes a user and recreates
-them by the same name must now purge from the trash**, or the create returns
-409. The e2e script was updated accordingly.
-
-### Limits without a GPU
-
-The assignment dialog required a GPU to be picked before it would submit, so
-the only way to cap someone's CPU and RAM was to hand them a card they did not
-need. Worse, the submit handler returned silently when no GPU was selected —
-the button did nothing and said nothing.
-
-Every field is optional now, with one rule: an assignment must set at least
-one of GPUs, RAM, CPU cores or CPU-seconds, since a row that sets nothing
-means nothing. Verified on the live host: a user assigned 4096 MB and 3 cores
-with no GPU came up with `memory.max` = 4096 MB, `cpu.max` = 3.00 cores,
-`nvidia-smi -L` empty and `NVIDIA_VISIBLE_DEVICES=void`.
-
-The same change fixed a limit that could be raised but never removed: the
-update endpoint skipped any field that arrived as null, and the form sends
-null for a field the admin has cleared, so blanking RAM and saving left the old
-cap in place. It now distinguishes a field that was *sent* from one that was
-omitted, so clearing a field clears the limit.
-
-### A process ceiling per user
-
-`Processes 11 of 512` was a platform-wide constant: `CONTAINER_PIDS_LIMIT`
-applied the same `pids.max` to everyone, and nothing in the UI could change it
-for one person. It is a fork-bomb ceiling, but it is also what a parallel build
-or a DataLoader with many workers runs into first, so one number for everyone
-is either too low for the people doing real work or too high to be a ceiling
-at all.
-
-**Processes** is now a field on the assignment, alongside RAM and cores, and
-falls back to `CONTAINER_PIDS_LIMIT` when left blank. A batch job inherits its
-owner's ceiling, like every other limit. Values under 16 are refused: a
-workspace needs a handful of processes just to start, and a ceiling below that
-fails in a way that looks like the platform is broken rather than like a
-setting.
-
-Verified on the live host with a ceiling of 64: `pids.max` = 64 inside the
-workspace, `limits` reporting `Processes 8 of 64`, the dashboard showing
-`Processes: 4 of 64`, and a submitted job reading back `pids.max = 64` from its
-own cgroup. Like RAM and CPU, a change applies the next time the user starts
-their workspace.
-
-### A quota you can get back under
-
-Two faults met on the same user, and each made the other harder to see.
-
-**The number and the verdict came from different places.** The admin table read
-disk usage from the cached scan of `JUPYTER_DATA_DIR` while the quota beside it
-was measured at the workspace's real location. For a user mapped to a home
-directory the scan knows nothing, so the row read **`0 MB / 195.3 GB` in red** —
-a figure saying "empty" next to a colour saying "full", and both were coming
-from the platform's own code. The same cached scan was what the reaper used to
-enforce the quota on running sessions, so a mapped home was never enforced at
-all no matter how full it got. All three now use one measurement,
-`quota.disk_used_mb`, which follows the mapping. The same user now reads
-`209.7 GB / 195.3 GB`.
-
-**And the quota had no exit.** Over budget refused the session start with
-"Delete some files before starting it again" — while the workspace is the only
-place the user can delete files from. The refusal made the condition permanent.
-
-A budget has to be answerable by the person who is over it, and disk and GPU
-hours differ there: files can be deleted, hours cannot be given back. So being
-over disk now costs the GPU and the job queue, never the workspace. The session
-starts, without a GPU, and says why; `submit` refuses with its own message; the
-resource card and the `limits` command both explain the state. Running out of
-hours costs them the queue in the same way, and nothing else: a workspace is
-never refused or stopped for either budget.
-
-With `DISK_QUOTA_ACTION=stop` the reaper would have undone this by stopping the
-session a minute after every start, so a session over budget now gets
-`DISK_QUOTA_GRACE_MINUTES` (30) to clean up before the action applies.
-
-Verified on the live host against the account this was reported for: the
-workspace starts, reads and deletes files, has `NVIDIA_VISIBLE_DEVICES=void`
-and no GPU visible, `limits` prints *"Over budget — no GPU and no jobs until you
-free space"*, and `submit` refuses.
-
-### A workspace is mounted where it belongs
-
-A workspace was mounted at `/workspace` for everyone. That is not a home
-directory, and everything installed into a home says so: conda writes its
-absolute prefix into `.bashrc`, into every wrapper script's shebang and into
-`conda-meta`; pip does the same for `--user` installs; virtualenvs record their
-own path. So mapping somebody's real home — with a working conda at
-`/home/trongchi/miniconda3` — put those files somewhere they did not expect to
-be, and every absolute path inside them pointed at nothing.
-
-A workspace now appears inside at the path it has outside:
-
-* a **mapped home** keeps its own absolute path, so a conda installation inside
-  it still finds itself;
-* anything else gets `/home/<username>`, which is what a Linux account is
-  expected to look like and what `~` expands to anyway.
-
-Moving it would have broken the same thing for anyone who installed into
-`/workspace` while that was the mount point, so `/workspace` is now a symlink
-to the workspace. Both paths resolve to the same files, and a `.bashrc` written
-a month ago keeps working.
-
-The path is published to the container (`PLATFORM_HOME`, and in the limits
-file the in-workspace tools already read) rather than assumed, so `limits`,
-`df`, the job commands and the job runner all follow it. The old fixed path
-remains their last-resort fallback, for a container created before the move
-and not yet restarted.
-
-Two things turned up while checking it. `df` hides a mount whose device is
-already listed under another mount point, so the workspace line — the only one
-that matters here — disappeared from `df` entirely once it was no longer the
-first such mount; it is now always printed, with the quota when there is one
-and the real figures when there is not. And the platform's own directory was
-showing up as a filesystem in the user's `df`; it is not their storage, so it
-is hidden.
-
-Verified on the live host for both kinds of workspace: `/home/trongchi` with
-`conda 25.5.1` resolving through `$PATH` in an interactive shell and through
-the legacy `/workspace/miniconda3/bin/conda` path, `/home/<user>` for a
-platform-created one, a job running with `home=/home/<user>` and the right
-working directory, and `df -Pk` still handing scripts untouched numbers.
-
-### An account its owner can maintain
-
-Changing your own name, email or password meant asking an administrator, or
-was a trip through a page that cost you whatever you were doing. Both are now
-a menu under your name in the navbar, and both open **over** the dashboard:
-the session card keeps polling, an open job output stays open, and a
-half-written form is still there when the modal closes.
-
-**Editing your details** takes the name and the email, and only those. The
-endpoint is not the admin one with a different door on it: quotas, the admin
-flag and the workspace path are not fields it has, so a crafted request that
-sends them changes nothing. An email already registered to somebody else is
-refused — without naming who holds it.
-
-**Changing your password** changes it everywhere it is used, because it is one
-password: the platform, SSH and Jupyter. The UNIX password inside a running
-container is replaced on the spot, so SSH accepts the new one immediately —
-sshd consults it per authentication. Jupyter reads its config once at startup,
-so its copy is written for the next session start; the workspace open in
-another tab keeps working throughout, because the proxy authenticates with the
-session token and not with this password.
-
-What the change no longer does is throw you out. Every token minted before it
-still dies — that is what makes a stolen session expire, and every other
-browser is signed out — but the one asking had just proved it knows both
-passwords, so it is handed a replacement in the response. Being ejected
-mid-run was not buying security; it was teaching people not to change their
-password. A user who deliberately set a *separate* Jupyter password is asked
-whether to give it up rather than having it silently overwritten.
-
-**Jobs arrive a page at a time.** The dashboard polls every few seconds; it
-was pulling a user's entire job history each time to draw the visible rows.
-It now asks for one page of ten, and turning a page fetches only that page.
-Active jobs are still counted over all of them rather than over the visible
-page, because "2 active" must not turn into "0 active" just because both happen
-to be on page three. A page that stops existing under a poll lands on the last
-real one instead of going blank.
-
-Filtering and sorting the history went the same way, to the server, for the
-same reason: the browser holds ten rows out of two hundred, so sorting them
-there would sort the page rather than the history. A status, a name search and
-an ordering are query parameters, the count the pager is built from follows the
-filter, and every sort carries the job id as a second key, since a column with
-ties would otherwise shuffle rows between pages under the poll.
-
-### The second session backend, removed
-
-A workspace could be started two ways, chosen by `SESSION_BACKEND`: a container
-of its own, or a `jupyter lab` subprocess inside the platform's own container.
-The second one shipped as the default in `config.py` and was what `deploy.sh`
-wrote on any host without a GPU, which is how a CPU-only machine ended up
-sharing one filesystem, one PID namespace and one network namespace between
-every user on it. Probed as an arbitrary uid inside the backend container: the
-whole of `/jupyter_data` was listable and every other user's workspace readable,
-including the `.jupyter` config that holds the argon2 hash of their account
-password. The memory cap was `RLIMIT_AS` rather than `memory.max`, there was no
-disk quota, no `cpu.max`, no SSH and no image choice, and half the platform's
-features were already switched off in that mode with an `active_backend() !=
-"container"` test.
-
-It is gone rather than patched, because the missing pieces are a mount, a PID
-and a network namespace plus cgroup limits, which together are a container
-runtime. See [A workspace is a container](#a-workspace-is-a-container) for what
-was actually wrong with it. `services/jupyter_manager.py` and
-`services/resource_limits.py` are deleted, the dispatch in
-`services/session_backend.py` with them, and `SESSION_BACKEND` and
-`JUPYTER_PORT_START`/`JUPYTER_PORT_END` are dropped from `.env` on the next
-`./deploy.sh`. The `pid` column stays so old rows still load; a session row that
-has one is reported stopped, and its owner presses **Start** to get a container.
-
-One behaviour went with it that was not obvious: a workspace whose image was
-missing used to *fall back* to the process backend, so a deployment that had
-lost `gpu-jupyter:latest` quietly moved every user onto the weaker path. Start
-now refuses with a 503 naming the image, and a test holds that line.
-
-### Verification on the reference host (2× RTX 4090, cgroup v2, default runtime `nvidia`)
-
-* The end-to-end script passes in full. Among other things it checks that a
-  user container sees **exactly 1 of 2 GPUs**, that the device request names a
-  single GPU UUID, that a kernel executes code over the proxied WebSocket with
-  the subprotocol negotiated, that cross-user access is denied, and that quota
-  refusal, token revocation and usage-ledger open/close all behave.
-* 114 pytest cases pass.
-* The idle reaper reclaims a stale session, closes its ledger row with reason
-  `idle` and writes the audit entry.
-* A backend restart leaves running user containers untouched.
-* Live behind the host's nginx at an HTTPS domain: SPA, login, the admin
-  resource API, the live-resource WebSocket (`101 Switching Protocols` plus
-  streaming frames), the Jupyter proxy and a kernel WebSocket with the
-  `v1.kernel.websocket.jupyter.org` subprotocol echoed back.
-
-### Left undone on purpose
-
-* No GPU fractioning. There is no MIG or MPS here, so GPUs are handed out
-  whole.
-* No reservation calendar for the case where every GPU is taken.
-* The disk quota is measured and enforced at session start rather than imposed
-  by the filesystem, so a running session can still go over it until it stops.
-* Still SQLite and a single worker. PostgreSQL is one config change away when
-  the user count makes it worth it.
-* No CI pipeline yet. The test suite runs locally.
-
+## Limitations
+
+* **One host.** The platform manages the GPUs, cores and memory of the machine
+  it runs on; it does not schedule across nodes. Groups with several machines
+  are better served by a cluster workload manager such as Slurm.
+* **No GPU fractioning.** There is no MIG or MPS support, so GPUs are handed
+  out whole and a VRAM reservation is enforced by measurement, after the fact.
+* **No reservation calendar** for the case where every GPU is taken.
+* **Disk quota** is measured, not imposed by the filesystem: it is checked at
+  session start and on the reaper interval, so a running session can go over it
+  in between.
+* **SQLite and a single worker.** Fine for one host; move `DATABASE_URL` to
+  PostgreSQL for more users.

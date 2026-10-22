@@ -94,6 +94,27 @@ def client():
 
 
 @pytest.fixture(autouse=True)
+def _no_leftover_runs():
+    """Start every test with no jobs, sessions or usage rows on the machine.
+
+    Accounts persist across the module (fixtures put them in a known state),
+    but what is running is per test: a job or session left by one test would
+    otherwise change queue positions and session lookups in the next, and the
+    suite would pass only in the order it happens to be written in.
+    """
+    models.Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        db.query(models.UsageRecord).delete()
+        db.query(models.JupyterSession).delete()
+        db.query(models.Job).delete()
+        db.commit()
+    finally:
+        db.close()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _clear_rate_limiter():
     """Login throttling is process-global; keep tests independent of order."""
     ratelimit._failures.clear()
@@ -126,6 +147,59 @@ def _login(client, username, password):
 
 def _auth(token):
     return {"Authorization": f"Bearer {token}"}
+
+
+def _ensure_account(client, username, password, assignment=None):
+    """Make *username* exist, active, with *password*, whatever ran before.
+
+    Tests that need an account ask for it through a fixture built on this
+    instead of relying on an earlier test having created it, so any one of
+    them can run alone (``-k``) or in any order.  An existing account is put
+    back into a known state through the admin API, the way an operator would.
+    """
+    token = _login(client, "admin", ADMIN_PW)
+    users = client.get("/api/admin/users", headers=_auth(token)).json()
+    existing = next((u for u in users if u["username"] == username), None)
+    if existing is None:
+        res = client.post("/api/admin/users", headers=_auth(token), json={
+            "username": username, "email": f"{username}@local", "password": password,
+        })
+        assert res.status_code == 201, res.text
+        user_id = res.json()["id"]
+        if assignment is not None:
+            res = client.post("/api/admin/gpu/assignments", headers=_auth(token),
+                              json={"user_id": user_id, **assignment})
+            assert res.status_code == 201, res.text
+        return user_id
+
+    user_id = existing["id"]
+    res = client.put(f"/api/admin/users/{user_id}", headers=_auth(token),
+                     json={"is_active": True})
+    assert res.status_code == 200, res.text
+    res = client.post(f"/api/admin/users/{user_id}/reset-password",
+                      headers=_auth(token), json={"new_password": password})
+    assert res.status_code == 200, res.text
+    return user_id
+
+
+@pytest.fixture
+def alice(client):
+    """A regular user holding GPU 1, logged in with ALICE_PW."""
+    return _ensure_account(client, "alice", ALICE_PW, assignment={"gpu_indices": [1]})
+
+
+@pytest.fixture
+def unified(client):
+    """An account whose derived Jupyter and UNIX credentials tests inspect."""
+    return _ensure_account(client, "unified", "Unified-pass-1")
+
+
+@pytest.fixture
+def cputest(client):
+    """An account with a CPU-and-memory assignment."""
+    return _ensure_account(client, "cputest", "Cputest-pass-1", assignment={
+        "gpu_indices": [0], "cpu_cores": 4, "memory_limit_mb": 2048,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -184,39 +258,40 @@ def test_full_admin_workflow(client):
     res = client.post(
         "/api/admin/users",
         headers=_auth(token),
-        json={"username": "alice", "email": "alice@local", "password": ALICE_PW},
+        json={"username": "walter", "email": "walter@local", "password": ALICE_PW},
     )
     assert res.status_code == 201, res.text
-    alice_id = res.json()["id"]
+    walter_id = res.json()["id"]
 
     # Duplicate username rejected
     res = client.post(
         "/api/admin/users",
         headers=_auth(token),
-        json={"username": "alice", "email": "alice2@local", "password": ALICE_PW},
+        json={"username": "walter", "email": "walter2@local", "password": ALICE_PW},
     )
     assert res.status_code == 409
 
-    # Assign GPU 1 to alice
+    # Assign GPU 1 to walter
     res = client.post(
         "/api/admin/gpu/assignments",
         headers=_auth(token),
-        json={"user_id": alice_id, "gpu_indices": [1]},
+        json={"user_id": walter_id, "gpu_indices": [1]},
     )
     assert res.status_code == 201, res.text
     assert res.json()["gpu_indices"] == [1]
+    assignment_id = res.json()["id"]
 
     # Out-of-range GPU rejected
     res = client.post(
         "/api/admin/gpu/assignments",
         headers=_auth(token),
-        json={"user_id": alice_id, "gpu_indices": [99]},
+        json={"user_id": walter_id, "gpu_indices": [99]},
     )
     assert res.status_code == 400
 
     # Regression: EVERY index is validated, not just the largest one.
     res = client.put(
-        "/api/admin/gpu/assignments/1",
+        f"/api/admin/gpu/assignments/{assignment_id}",
         headers=_auth(token),
         json={"gpu_indices": [0, 42, 1]},
     )
@@ -227,30 +302,30 @@ def test_full_admin_workflow(client):
     res = client.post(
         "/api/admin/gpu/assignments",
         headers=_auth(token),
-        json={"user_id": alice_id, "gpu_indices": [0]},
+        json={"user_id": walter_id, "gpu_indices": [0]},
     )
     assert res.status_code == 409
 
     # Regular user cannot access admin endpoints
-    alice_token = _login(client, "alice", ALICE_PW)
-    res = client.get("/api/admin/users", headers=_auth(alice_token))
+    walter_token = _login(client, "walter", ALICE_PW)
+    res = client.get("/api/admin/users", headers=_auth(walter_token))
     assert res.status_code == 403
 
-    # Alice sees only her assigned GPU (mock monitor returns GPUs 0 and 1)
-    res = client.get("/api/user/me/gpu", headers=_auth(alice_token))
+    # Walter sees only his assigned GPU (mock monitor returns GPUs 0 and 1)
+    res = client.get("/api/user/me/gpu", headers=_auth(walter_token))
     assert res.status_code == 200
     assert [g["index"] for g in res.json()] == [1]
 
-    # …and the shared GPU endpoint is scoped for her too (it used to return
-    # every GPU, including other users' process lists).
-    res = client.get("/api/gpu/status", headers=_auth(alice_token))
+    # …and the shared GPU endpoint is scoped for his too (it used to return
+    # every GPU, including othis users' process lists).
+    res = client.get("/api/gpu/status", headers=_auth(walter_token))
     assert [g["index"] for g in res.json()] == [1]
 
-    # Alice sees only herself via /me, with assignment embedded
-    res = client.get("/api/user/me", headers=_auth(alice_token))
+    # Walter sees only himself via /me, with assignment embedded
+    res = client.get("/api/user/me", headers=_auth(walter_token))
     assert res.status_code == 200
     body = res.json()
-    assert body["username"] == "alice"
+    assert body["username"] == "walter"
     assert body["gpu_assignment"]["gpu_indices"] == [1]
 
 
@@ -356,7 +431,7 @@ def test_admin_sessions_and_force_stop(client):
 # Quotas
 # ---------------------------------------------------------------------------
 
-def test_disk_quota_costs_the_gpu_not_the_workspace(client, monkeypatch):
+def test_disk_quota_costs_the_gpu_not_the_workspace(client, alice, monkeypatch):
     """Over budget must not lock a user out of their own files.
 
     This used to assert a 429 on start.  That was the bug: the refusal told
@@ -408,7 +483,7 @@ def test_disk_quota_costs_the_gpu_not_the_workspace(client, monkeypatch):
     client.post("/api/user/me/jupyter/stop", headers=_auth(alice_token), json={})
 
 
-def test_freeing_space_counts_before_the_scan_expires(client, monkeypatch):
+def test_freeing_space_counts_before_the_scan_expires(client, alice, monkeypatch):
     """Deleting files has to let a job through now, not in five minutes.
 
     Scanning every workspace is expensive, so the figure is cached, and the
@@ -450,7 +525,7 @@ def test_freeing_space_counts_before_the_scan_expires(client, monkeypatch):
                json={"disk_quota_mb": 0})
 
 
-def test_a_user_still_over_budget_is_refused(client, monkeypatch):
+def test_a_user_still_over_budget_is_refused(client, alice, monkeypatch):
     """The re-measure must confirm the refusal, not soften it."""
     from services import metrics, quota as quota_service
 
@@ -481,7 +556,7 @@ def test_a_user_still_over_budget_is_refused(client, monkeypatch):
                json={"disk_quota_mb": 0})
 
 
-def test_resources_endpoint_reports_quota(client):
+def test_resources_endpoint_reports_quota(client, alice):
     alice_token = _login(client, "alice", ALICE_PW)
     res = client.get("/api/user/me/resources", headers=_auth(alice_token))
     assert res.status_code == 200
@@ -493,7 +568,7 @@ def test_resources_endpoint_reports_quota(client):
 # Password management & token revocation
 # ---------------------------------------------------------------------------
 
-def test_password_reset_and_change(client):
+def test_password_reset_and_change(client, alice):
     admin_token = _login(client, "admin", ADMIN_PW)
 
     res = client.get("/api/admin/users", headers=_auth(admin_token))
@@ -531,13 +606,13 @@ def test_password_reset_and_change(client):
     assert _login(client, "alice", "finalpass123")
 
 
-def test_deactivation_revokes_live_tokens(client):
+def test_deactivation_revokes_live_tokens(client, alice):
     """A deactivated user used to keep working until their JWT expired."""
     admin_token = _login(client, "admin", ADMIN_PW)
     res = client.get("/api/admin/users", headers=_auth(admin_token))
     alice_id = next(u["id"] for u in res.json() if u["username"] == "alice")
 
-    alice_token = _login(client, "alice", "finalpass123")
+    alice_token = _login(client, "alice", ALICE_PW)
     assert client.get("/api/user/me", headers=_auth(alice_token)).status_code == 200
 
     client.put(f"/api/admin/users/{alice_id}", headers=_auth(admin_token),
@@ -552,7 +627,8 @@ def test_deactivation_revokes_live_tokens(client):
 # Audit trail
 # ---------------------------------------------------------------------------
 
-def test_audit_trail_records_privileged_actions(client):
+def test_audit_trail_records_privileged_actions(client, alice):
+    client.post("/api/auth/login", data={"username": "admin", "password": "wrong"})
     token = _login(client, "admin", ADMIN_PW)
     res = client.get("/api/admin/audit", headers=_auth(token))
     assert res.status_code == 200
@@ -601,13 +677,13 @@ def test_account_password_derives_jupyter_and_unix_credentials(client):
     """One password: the account password is what Jupyter and sshd accept."""
     token = _login(client, "admin", ADMIN_PW)
     res = client.post("/api/admin/users", headers=_auth(token), json={
-        "username": "unified", "email": "unified@local", "password": "Unified-pass-1",
+        "username": "derivedcreds", "email": "derivedcreds@local", "password": "Unified-pass-1",
     })
     assert res.status_code == 201, res.text
 
     db = SessionLocal()
     try:
-        user = db.query(models.User).filter(models.User.username == "unified").first()
+        user = db.query(models.User).filter(models.User.username == "derivedcreds").first()
         # Jupyter's format, and /etc/shadow's format, neither reversible.
         assert user.account_jupyter_hash.startswith("argon2:$argon2")
         assert user.unix_password_hash.startswith("$6$")
@@ -622,7 +698,7 @@ def test_account_password_derives_jupyter_and_unix_credentials(client):
         db.close()
 
 
-def test_login_backfills_derived_credentials(client):
+def test_login_backfills_derived_credentials(client, unified):
     """Accounts predating unified passwords are repaired on next login."""
     db = SessionLocal()
     try:
@@ -644,7 +720,7 @@ def test_login_backfills_derived_credentials(client):
         db.close()
 
 
-def test_changing_the_password_refreshes_derived_credentials(client):
+def test_changing_the_password_refreshes_derived_credentials(client, unified):
     token = _login(client, "unified", "Unified-pass-1")
     db = SessionLocal()
     try:
@@ -676,7 +752,7 @@ def test_cpu_cores_is_separate_from_the_cpu_seconds_budget(client):
     `seconds / 3600` floored at 0.25, so an admin asking for 4 cores got 0.25."""
     token = _login(client, "admin", ADMIN_PW)
     res = client.post("/api/admin/users", headers=_auth(token), json={
-        "username": "cputest", "email": "cputest@local", "password": "Cputest-pass-1",
+        "username": "cpucores", "email": "cpucores@local", "password": "Cputest-pass-1",
     })
     user_id = res.json()["id"]
 
@@ -692,7 +768,7 @@ def test_cpu_cores_is_separate_from_the_cpu_seconds_budget(client):
 
     db = SessionLocal()
     try:
-        user = db.query(models.User).filter(models.User.username == "cputest").first()
+        user = db.query(models.User).filter(models.User.username == "cpucores").first()
         memory_mb, cores, seconds, procs = _resolve_limits(user)
         assert memory_mb == 2048
         assert cores == 4
@@ -702,7 +778,7 @@ def test_cpu_cores_is_separate_from_the_cpu_seconds_budget(client):
         db.close()
 
 
-def test_mis_entered_cpu_seconds_are_rescued_as_cores():
+def test_mis_entered_cpu_seconds_are_rescued_as_cores(cputest):
     """A value no larger than the host core count cannot be a CPU-seconds
     budget, so the migration re-reads it as the core count it meant."""
     import os
@@ -3791,6 +3867,95 @@ def test_the_guard_stands_down_rather_than_exec_into_every_job(client, monkeypat
 
     assert job_service.gpu_guard_pass() == {
         "checked": 0, "stopped": [], "scan": "unusable"}
+
+
+def test_jobs_admitted_in_one_pass_are_counted_at_their_allowance(client, monkeypatch):
+    """Within one scheduling pass the second job must not be placed in the
+    margin the first may still grow into, exactly as across passes."""
+    from services import container_manager, jobs as job_service, quota
+
+    # One card with 41000 MiB free.  Two 20000 MiB jobs: the first is entitled
+    # to 22000, leaving 19000, so the second must wait.  Counting the first at
+    # its request would have left 21000 and admitted both.
+    monkeypatch.setattr(job_service, "gpu_availability", lambda db: [
+        {"index": 0, "uuid": None, "name": "test", "total_mb": 49140,
+         "used_mb": 0, "reserved_mb": 0, "entitled_mb": 0,
+         "free_mb": 41000, "running_jobs": 0},
+    ])
+    monkeypatch.setattr(job_service, "cpu_capacity", lambda db: {
+        "total_cores": 32, "committed_cores": 0, "free_cores": 32, "basis": "measured"})
+    monkeypatch.setattr(quota, "job_blocker", lambda db, user: None)
+    monkeypatch.setattr(container_manager, "start_job_container",
+                        lambda job, user: {"container_id": "c" * 64})
+
+    ids = {}
+    for name in ("passone", "passtwo"):
+        user_id, _ = _job_user(client, name)
+        db = SessionLocal()
+        try:
+            job = models.Job(user_id=user_id, username=name, script="job.sh",
+                             workdir="", gpu_count=1, gpu_memory_mb=20000,
+                             status=models.JobStatus.queued)
+            db.add(job)
+            db.commit()
+            ids[name] = job.id
+        finally:
+            db.close()
+
+    db = SessionLocal()
+    try:
+        started = job_service._dispatch_queued(db)
+        assert len(started) == 1, started
+        waiting = [j for j in db.query(models.Job).filter(models.Job.id.in_(ids.values()))
+                   if j.status == models.JobStatus.queued]
+        assert len(waiting) == 1
+    finally:
+        db.close()
+
+
+def test_a_job_closed_by_two_threads_is_booked_once(client):
+    """The VRAM guard and the scheduler pass can both end the same job.  Only
+    the first close may stand, and the stretch it ran is booked once."""
+    from datetime import datetime, timedelta
+
+    from services import jobs as job_service
+
+    user_id, _ = _job_user(client, "closedtwice")
+    db = SessionLocal()
+    try:
+        job = models.Job(user_id=user_id, username="closedtwice", script="job.sh",
+                         workdir="", gpu_count=1, gpu_memory_mb=1000, gpu_indices="0",
+                         status=models.JobStatus.running,
+                         started_at=datetime.utcnow() - timedelta(minutes=5))
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    finally:
+        db.close()
+
+    guard, scheduler = SessionLocal(), SessionLocal()
+    try:
+        # Both threads have loaded the job while it was still running.
+        g = guard.query(models.Job).get(job_id)
+        s = scheduler.query(models.Job).get(job_id)
+        assert job_service._close(guard, g, models.JobStatus.failed, None, "Stopped: overrun")
+        guard.commit()
+        assert not job_service._close(scheduler, s, models.JobStatus.failed, 143,
+                                      "The script exited with code 143.")
+        scheduler.commit()
+    finally:
+        guard.close()
+        scheduler.close()
+
+    db = SessionLocal()
+    try:
+        row = db.query(models.Job).get(job_id)
+        assert row.message == "Stopped: overrun", "the first reason must survive"
+        booked = db.query(models.UsageRecord).filter(
+            models.UsageRecord.username == "closedtwice").count()
+        assert booked == 1, f"the stretch was booked {booked} times"
+    finally:
+        db.close()
 
 
 def test_placement_holds_back_the_grace_a_job_may_still_grow_into(client):
