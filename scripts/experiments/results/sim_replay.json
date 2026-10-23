@@ -1,0 +1,613 @@
+{
+ "config": {
+  "gpus": 2,
+  "vram_mb": 49140,
+  "headroom_mb": 512,
+  "cores": 1000000000.0,
+  "period": 10.0,
+  "max_running_per_user": 2,
+  "window_h": 24.0,
+  "halflife_h": 6.0,
+  "kappa": 0.125,
+  "lookahead_s": 600.0,
+  "overrun_factor": 1.1,
+  "overrun_grace_mb": 1024,
+  "workspace_mb": 0,
+  "workspace_cores": false
+ },
+ "jobs": 796,
+ "sessions": 43,
+ "users": [
+  "user1",
+  "user2",
+  "user3",
+  "user4"
+ ],
+ "validation": {
+  "0": {
+   "jobs": 796,
+   "real_wait_s": {
+    "median": 6.6,
+    "p90": 289.8,
+    "p99": 5353.9
+   },
+   "sim_wait_s": {
+    "median": 5.400000000023283,
+    "p90": 9.899999999906868,
+    "p99": 3485.5999999999767
+   }
+  },
+  "8192": {
+   "jobs": 796,
+   "real_wait_s": {
+    "median": 6.6,
+    "p90": 289.8,
+    "p99": 5353.9
+   },
+   "sim_wait_s": {
+    "median": 5.400000000023283,
+    "p90": 9.899999999906868,
+    "p99": 3865.4000000000233
+   }
+  }
+ },
+ "by_workspace_mb": {
+  "0": {
+   "1": {
+    "fifo": {
+     "jain_service": 0.9999400267069635,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 1.8710364321607345,
+     "p95_wait_min": 4.736666666665891,
+     "mean_bsld": 1.6136606904888537,
+     "makespan_h": 794.0832222222222,
+     "throughput_jobs_per_h": 1.0024138248034178,
+     "gpu_occupancy": 0.2054877504442908,
+     "jobs_per_busy_card": 1.047439195713867,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 0.07692090395479383,
+       "mean_bsld": 1.006029386912541
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 7.0354636591478625,
+       "mean_bsld": 2.035631975928306
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 0.9090894039734205,
+       "mean_bsld": 1.5800978857662633
+      }
+     }
+    },
+    "slurm": {
+     "jain_service": 0.9999400267069635,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 1.8710364321607345,
+     "p95_wait_min": 4.736666666665891,
+     "mean_bsld": 1.6136606904888537,
+     "makespan_h": 794.0832222222222,
+     "throughput_jobs_per_h": 1.0024138248034178,
+     "gpu_occupancy": 0.2054877504442908,
+     "jobs_per_busy_card": 1.047439195713867,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 0.07692090395479383,
+       "mean_bsld": 1.006029386912541
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 7.0354636591478625,
+       "mean_bsld": 2.035631975928306
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 0.9090894039734205,
+       "mean_bsld": 1.5800978857662633
+      }
+     }
+    },
+    "platform": {
+     "jain_service": 0.9999400267069635,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 1.8710364321607345,
+     "p95_wait_min": 4.736666666665891,
+     "mean_bsld": 1.6136606904888537,
+     "makespan_h": 794.0832222222222,
+     "throughput_jobs_per_h": 1.0024138248034178,
+     "gpu_occupancy": 0.2054877504442908,
+     "jobs_per_busy_card": 1.047439195713867,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 0.07692090395479383,
+       "mean_bsld": 1.006029386912541
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 7.0354636591478625,
+       "mean_bsld": 2.035631975928306
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 0.9090894039734205,
+       "mean_bsld": 1.5800978857662633
+      }
+     }
+    }
+   },
+   "4": {
+    "fifo": {
+     "jain_service": 0.9999095593699749,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 1168.7855459589616,
+     "p95_wait_min": 2578.119166666667,
+     "mean_bsld": 670.2540071835925,
+     "makespan_h": 201.27423611111112,
+     "throughput_jobs_per_h": 3.954803234531107,
+     "gpu_occupancy": 0.7354941727169529,
+     "jobs_per_busy_card": 1.154551622850064,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 781.3433827683616,
+       "mean_bsld": 233.95413003634707
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 19.958740601503756,
+       "mean_bsld": 5.302530716317685
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 1459.6018584437086,
+       "mean_bsld": 859.2941381800081
+      }
+     }
+    },
+    "slurm": {
+     "jain_service": 0.9999095593699749,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 1187.2855459589616,
+     "p95_wait_min": 2659.1991666666668,
+     "mean_bsld": 695.3753498621028,
+     "makespan_h": 201.27423611111112,
+     "throughput_jobs_per_h": 3.954803234531107,
+     "gpu_occupancy": 0.7562092763845919,
+     "jobs_per_busy_card": 1.1229245887685402,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 830.3575070621469,
+       "mean_bsld": 209.32471555642255
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 27.59407894736842,
+       "mean_bsld": 16.042396693571103
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 1477.5135582229582,
+       "mean_bsld": 892.4420223711257
+      }
+     }
+    },
+    "platform": {
+     "jain_service": 0.9999095593699749,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 1172.0114672319933,
+     "p95_wait_min": 2663.3658333333337,
+     "mean_bsld": 679.9712641476559,
+     "makespan_h": 201.27423611111112,
+     "throughput_jobs_per_h": 3.954803234531107,
+     "gpu_occupancy": 0.7563491491190356,
+     "jobs_per_busy_card": 1.1227169247115527,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 832.0185240112994,
+       "mean_bsld": 209.70587780405478
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 27.59407894736842,
+       "mean_bsld": 16.042396693571103
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 1457.2218915562914,
+       "mean_bsld": 872.1040409120033
+      }
+     }
+    }
+   },
+   "16": {
+    "fifo": {
+     "jain_service": 0.8203269474169388,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 1264.5022910123532,
+     "p95_wait_min": 6276.6821875000005,
+     "mean_bsld": 680.4568582470623,
+     "makespan_h": 137.90593402777776,
+     "throughput_jobs_per_h": 5.77205038790909,
+     "gpu_occupancy": 0.9736056751042735,
+     "jobs_per_busy_card": 1.2729599162193788,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 1802.8725688559323,
+       "mean_bsld": 478.74007992013884
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 34.80171522556391,
+       "mean_bsld": 16.08890157938767
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 1482.691579401214,
+       "mean_bsld": 846.4539247339649
+      }
+     }
+    },
+    "slurm": {
+     "jain_service": 0.745881436896509,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 2376.5470983825376,
+     "p95_wait_min": 6175.1016666666665,
+     "mean_bsld": 1404.7215085939056,
+     "makespan_h": 136.14760069444444,
+     "throughput_jobs_per_h": 5.846595870510123,
+     "gpu_occupancy": 0.9733785399215298,
+     "jobs_per_busy_card": 1.2897009505781325,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 2401.895167725989,
+       "mean_bsld": 640.8033932937448
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 34.80171522556391,
+       "mean_bsld": 16.08890157938767
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 2889.720276972958,
+       "mean_bsld": 1785.1177098118533
+      }
+     }
+    },
+    "platform": {
+     "jain_service": 0.745881436896509,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 2376.627081632119,
+     "p95_wait_min": 6175.1016666666665,
+     "mean_bsld": 1404.802591579625,
+     "makespan_h": 136.14760069444444,
+     "throughput_jobs_per_h": 5.846595870510123,
+     "gpu_occupancy": 0.9733785399215298,
+     "jobs_per_busy_card": 1.2897009505781325,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 2402.9912129237287,
+       "mean_bsld": 641.8994384914848
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 34.80171522556391,
+       "mean_bsld": 16.08890157938767
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 2889.718621343819,
+       "mean_bsld": 1785.1175035038498
+      }
+     }
+    }
+   }
+  },
+  "8192": {
+   "1": {
+    "fifo": {
+     "jain_service": 0.9999400267069635,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 2.1028203517587243,
+     "p95_wait_min": 5.021666666667443,
+     "mean_bsld": 1.6155740302052215,
+     "makespan_h": 794.0832222222222,
+     "throughput_jobs_per_h": 1.0024138248034178,
+     "gpu_occupancy": 0.20554408724861947,
+     "jobs_per_busy_card": 1.0471521070517456,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 0.07692090395479383,
+       "mean_bsld": 1.006029386912541
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 7.0354636591478625,
+       "mean_bsld": 2.035631975928306
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 1.214552980132361,
+       "mean_bsld": 1.5826194394322048
+      }
+     }
+    },
+    "slurm": {
+     "jain_service": 0.9999400267069635,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 2.1028203517587243,
+     "p95_wait_min": 5.021666666667443,
+     "mean_bsld": 1.6155740302052215,
+     "makespan_h": 794.0832222222222,
+     "throughput_jobs_per_h": 1.0024138248034178,
+     "gpu_occupancy": 0.20554408724861947,
+     "jobs_per_busy_card": 1.0471521070517456,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 0.07692090395479383,
+       "mean_bsld": 1.006029386912541
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 7.0354636591478625,
+       "mean_bsld": 2.035631975928306
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 1.214552980132361,
+       "mean_bsld": 1.5826194394322048
+      }
+     }
+    },
+    "platform": {
+     "jain_service": 0.9999400267069635,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 2.1028203517587243,
+     "p95_wait_min": 5.021666666667443,
+     "mean_bsld": 1.6155740302052215,
+     "makespan_h": 794.0832222222222,
+     "throughput_jobs_per_h": 1.0024138248034178,
+     "gpu_occupancy": 0.20554408724861947,
+     "jobs_per_busy_card": 1.0471521070517456,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 0.07692090395479383,
+       "mean_bsld": 1.006029386912541
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 7.0354636591478625,
+       "mean_bsld": 2.035631975928306
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 1.214552980132361,
+       "mean_bsld": 1.5826194394322048
+      }
+     }
+    }
+   },
+   "4": {
+    "fifo": {
+     "jain_service": 0.9426789644855136,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 1170.4578658919597,
+     "p95_wait_min": 1314.2520833333333,
+     "mean_bsld": 413.6146495761163,
+     "makespan_h": 492.058625,
+     "throughput_jobs_per_h": 1.6176934201691922,
+     "gpu_occupancy": 0.30231114342433485,
+     "jobs_per_busy_card": 1.1489728716513887,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 1910.0806709039548,
+       "mean_bsld": 342.30845808135626
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 252.57277568922305,
+       "mean_bsld": 65.18118446228235
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 1300.3270240066227,
+       "mean_bsld": 497.3045769905712
+      }
+     }
+    },
+    "slurm": {
+     "jain_service": 0.9426789644855131,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 1076.2225225083753,
+     "p95_wait_min": 1344.7541666666666,
+     "mean_bsld": 367.52635197248463,
+     "makespan_h": 491.60306944444443,
+     "throughput_jobs_per_h": 1.6191924938539366,
+     "gpu_occupancy": 0.30556997754031595,
+     "jobs_per_busy_card": 1.1377727057637432,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 1864.7501624293786,
+       "mean_bsld": 327.64145356838924
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 44.15422932330827,
+       "mean_bsld": 11.142050950252637
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 1226.4575427704194,
+       "mean_bsld": 449.89774442579335
+      }
+     }
+    },
+    "platform": {
+     "jain_service": 0.9426789644855131,
+     "jobs": 796,
+     "unfinished": 0,
+     "mean_wait_min": 1072.204306427973,
+     "p95_wait_min": 1344.7541666666666,
+     "mean_bsld": 365.94967254427297,
+     "makespan_h": 491.3275972222222,
+     "throughput_jobs_per_h": 1.6201003251196935,
+     "gpu_occupancy": 0.3057186867316161,
+     "jobs_per_busy_card": 1.1378568685021795,
+     "vram_held_over_reserved": 0.7049498250439777,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 1882.6936652542374,
+       "mean_bsld": 328.6232737893179
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 44.53392857142857,
+       "mean_bsld": 11.237962512104902
+      },
+      "user4": {
+       "jobs": 604,
+       "mean_wait_min": 1219.3256443156731,
+       "mean_bsld": 447.7028430092079
+      }
+     }
+    }
+   },
+   "16": {
+    "fifo": {
+     "jain_service": 0.8127219921778568,
+     "jobs": 787,
+     "unfinished": 9,
+     "mean_wait_min": 1597.6178594875053,
+     "p95_wait_min": 3887.6784374999997,
+     "mean_bsld": 737.5800012081237,
+     "makespan_h": 399.5781284722222,
+     "throughput_jobs_per_h": 1.969577271431438,
+     "gpu_occupancy": 0.3300936983876771,
+     "jobs_per_busy_card": 1.2457928419555822,
+     "vram_held_over_reserved": 0.7100722255980836,
+     "per_user": {
+      "user1": {
+       "jobs": 58,
+       "mean_wait_min": 2330.4579454022987,
+       "mean_bsld": 536.9642714216877
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 35.41700344611529,
+       "mean_bsld": 12.232414232182093
+      },
+      "user4": {
+       "jobs": 596,
+       "mean_wait_min": 1874.913142827181,
+       "mean_bsld": 918.967486770898
+      }
+     }
+    },
+    "slurm": {
+     "jain_service": 0.8203408243038885,
+     "jobs": 788,
+     "unfinished": 8,
+     "mean_wait_min": 1470.4594028923434,
+     "p95_wait_min": 2815.2773958333332,
+     "mean_bsld": 641.2598835278601,
+     "makespan_h": 402.5336840277778,
+     "throughput_jobs_per_h": 1.9576001494215878,
+     "gpu_occupancy": 0.3356153916070223,
+     "jobs_per_busy_card": 1.238668079648416,
+     "vram_held_over_reserved": 0.7016378538004103,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 2675.881043432203,
+       "mean_bsld": 528.525241806699
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 31.42577537593985,
+       "mean_bsld": 10.848035716254932
+      },
+      "user4": {
+       "jobs": 596,
+       "mean_wait_min": 1672.257382200783,
+       "mean_bsld": 793.0990104078802
+      }
+     }
+    },
+    "platform": {
+     "jain_service": 0.8165173983096273,
+     "jobs": 788,
+     "unfinished": 8,
+     "mean_wait_min": 1432.4245044151862,
+     "p95_wait_min": 3037.5815625,
+     "mean_bsld": 635.9897111810479,
+     "makespan_h": 402.97257291666665,
+     "throughput_jobs_per_h": 1.955468071428662,
+     "gpu_occupancy": 0.3378719400542328,
+     "jobs_per_busy_card": 1.22905531710875,
+     "vram_held_over_reserved": 0.7016378538004103,
+     "per_user": {
+      "user1": {
+       "jobs": 59,
+       "mean_wait_min": 2779.8386705508474,
+       "mean_bsld": 557.7189086705451
+      },
+      "user3": {
+       "jobs": 133,
+       "mean_wait_min": 37.17013627819549,
+       "mean_bsld": 12.86947240296105
+      },
+      "user4": {
+       "jobs": 596,
+       "mean_wait_min": 1610.3966439457495,
+       "mean_bsld": 782.7899949152849
+      }
+     }
+    }
+   }
+  }
+ },
+ "generated": "2026-10-23T12:12:28+08:00"
+}

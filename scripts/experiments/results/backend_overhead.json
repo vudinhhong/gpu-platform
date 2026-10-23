@@ -1,0 +1,18 @@
+{
+ "measured": "2026-10-22T19:06:51+08:00",
+ "seconds": 600.0,
+ "nvidia_smi_query_ms": {
+  "median": 28.949135914444923,
+  "max": 33.67666434496641
+ },
+ "containers": {
+  "workspace-gpu-backend-1": {
+   "cpu_cores_avg": 0.03693187188449973,
+   "memory_mib": 835.79296875
+  },
+  "workspace-gpu-frontend-1": {
+   "cpu_cores_avg": 0.0,
+   "memory_mib": 13.33203125
+  }
+ }
+}

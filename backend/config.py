@@ -282,7 +282,7 @@ class Settings(BaseSettings):
     # key-only deployment: the SSH port range is reachable from the internet
     # and, unlike the web login, sshd is not covered by the platform's
     # lockout, keys remove that exposure entirely.
-    SSH_PASSWORD_AUTH: bool = True
+    SSH_PASSWORD_AUTH: bool = False
 
     # ── Per-user SSH access (container backend only) ─────────────────────
     SSH_ENABLED: bool = True

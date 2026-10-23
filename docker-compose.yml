@@ -43,7 +43,7 @@ services:
       # One password per user: Jupyter and the container's UNIX account both
       # accept the platform account password (derived, never stored in clear).
       - UNIFIED_PASSWORD=${UNIFIED_PASSWORD:-true}
-      - SSH_PASSWORD_AUTH=${SSH_PASSWORD_AUTH:-true}
+      - SSH_PASSWORD_AUTH=${SSH_PASSWORD_AUTH:-false}
       - LOGIN_MAX_FAILURES=${LOGIN_MAX_FAILURES:-8}
       - LOGIN_LOCKOUT_SECONDS=${LOGIN_LOCKOUT_SECONDS:-900}
       # ── Quotas & lifecycle ────────────────────────────────────────────

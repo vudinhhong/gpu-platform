@@ -1,0 +1,13 @@
+{
+ "measured": "2026-10-22",
+ "gpu": "NVIDIA GeForce RTX 4090 (GPU 0 of the reference host, compute mode Default)",
+ "image": "pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime",
+ "scripts": ["scripts/experiments/mps_limit.sh", "scripts/experiments/mps_details.sh", "scripts/experiments/mps_bypass.sh"],
+ "client_env_limit_2GiB": {"alloc_1GiB": "allowed", "alloc_3GiB": "refused (CUDA OOM at allocation)", "alloc_6GiB": "refused"},
+ "largest_single_alloc_under_2GiB_limit": {"1.5GiB": "allowed", "1.75GiB": "refused", "1.9GiB": "refused"},
+ "limit_scope": "per client process: two concurrent clients each held 1.5 GiB under a 2 GiB limit",
+ "two_private_daemons_same_gpu": "both work, each enforcing its own limit",
+ "server_side_limit_2GiB": {"cooperating_client_6GiB": "refused", "client_sets_larger_env_limit_6GiB": "refused",
+                            "client_points_pipe_dir_elsewhere_6GiB": "allowed (no MPS, ordinary context)"},
+ "conclusion": "MPS enforces a hard per-process VRAM ceiling on GeForce, set server-side so the client cannot raise it, but a client that does not connect to the daemon escapes it unless the GPU is in EXCLUSIVE_PROCESS mode, which admits one MPS server (one UID) per GPU at a time."
+}

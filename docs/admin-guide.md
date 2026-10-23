@@ -102,7 +102,7 @@ reasoning. These are the ones you will actually touch:
 | `JOB_MAX_RUNNING_PER_USER` | `2` | How many jobs one person may have running at once. A frozen job still counts: it will want its slot back |
 | `JOB_CPU_RESERVED_CORES` | `4` | Cores kept back from the queue for the platform and for interactive work |
 | `JUPYTER_IMAGES` | empty | An allow-list of images users may pick from, as `Label=ref,Label2=ref2` |
-| `SSH_PASSWORD_AUTH` | `true` | Set `false` for a key-only deployment. The SSH ports are reachable and sshd is not covered by the platform's login lockout |
+| `SSH_PASSWORD_AUTH` | `false` | Key-only by default (an install upgraded from before 1.2.0 keeps `true`). Set `true` to allow passwords. The SSH ports are reachable and sshd is not covered by the platform's login lockout |
 
 Changes take effect on the next `./deploy.sh`, and for per-workspace limits on
 the next time that user starts their workspace.

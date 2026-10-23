@@ -204,6 +204,10 @@ GPU_COUNT=2
 CPU_ONLY=$CPU_ONLY_MARK
 JUPYTER_DATA_DIR=/jupyter_data
 JUPYTER_DATA_HOST_DIR=$(pwd)/jupyter_data
+# SSH accepts keys only.  Users add a key on their profile page; set true to
+# let them log in with their password too (sshd is not covered by the
+# platform's login throttling).
+SSH_PASSWORD_AUTH=false
 ENVEOF
 
     echo "  .env created (HTTP_MODE=$HTTP_MODE)."
@@ -233,6 +237,14 @@ else
             printf 'CPU_ONLY=true\n' >> .env
             echo "     CPU_ONLY=true carried over from it."
         fi
+    fi
+    # Key-only SSH became the default in 1.2.0.  An install that predates it
+    # has users who log in with their password, so it keeps doing what it did
+    # until an administrator decides otherwise.
+    if ! grep -qE '^SSH_PASSWORD_AUTH=' .env; then
+        printf 'SSH_PASSWORD_AUTH=true\n' >> .env
+        echo "  SSH_PASSWORD_AUTH=true recorded: this install already allowed SSH"
+        echo "     passwords. New installs are key-only; set false to match."
     fi
     sed -i.bak -e '/^COMPOSE_PROFILES=/d' -e '/^SESSION_BACKEND=/d' \
                -e '/^JUPYTER_PORT_START=/d' -e '/^JUPYTER_PORT_END=/d' .env \

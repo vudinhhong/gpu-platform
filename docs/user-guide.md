@@ -43,8 +43,9 @@ password you were given.
 account, including your notebook server.*
 
 Change your password the first time you sign in: click your name in the top
-right, then **Change password**. That one password is also your SSH password
-and your JupyterLab password, so changing it changes all three at once.
+right, then **Change password**. That one password is also your JupyterLab
+password (and your SSH password, if your administrator allows passwords over
+SSH), so changing it changes them all at once.
 
 ---
 
@@ -138,8 +139,9 @@ yours and does not change:
 ssh -p 2231 alice@gpu-server.example.edu
 ```
 
-Your password is your platform account password. If you registered an SSH key
-on the card, the key works as well and you will not be asked for anything.
+Register your SSH public key on the workspace card first: by default the
+platform accepts keys only. If your administrator has allowed passwords over
+SSH, your platform account password works too.
 
 This is also how you attach VS Code: **Remote-SSH** with the same host, port
 and user gives you the editor running against the workspace, with your GPUs.
@@ -279,6 +281,12 @@ its request is stopped and told what it really used, so it can be resubmitted
 with a true number. There is some tolerance built in, roughly ten per cent plus
 a gigabyte, because a CUDA context costs a few hundred megabytes before your
 first tensor exists.
+
+That gigabyte covers one CUDA process with the default lazy module loading.
+It does not cover `CUDA_MODULE_LOADING=EAGER`, which costs 0.5 to 1.2 GB
+more per process, nor several processes on one card (DataLoader workers that
+touch CUDA, or one process per GPU rank on the same GPU): count each of them
+in your request, or leave the default loading alone.
 
 Asking for far more than you need is not punished, but it is not free either:
 it makes your job wait for a card that is emptier than it has to be, and it

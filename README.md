@@ -350,7 +350,7 @@ CPU-hours** a week each.
 | `LOGIN_FAIL_WINDOW_SECONDS` | `300` | Sliding window for the failure count |
 | `LOGIN_LOCKOUT_SECONDS` | `900` | Lockout duration |
 | `UNIFIED_PASSWORD` | `true` | One password per user: Jupyter and the container's UNIX account both accept the **platform account password** (see below) |
-| `SSH_PASSWORD_AUTH` | `true` | Accept password auth over SSH at all. `false` = key-only |
+| `SSH_PASSWORD_AUTH` | `false` | Accept password auth over SSH. Key-only by default; installs that predate 1.2.0 have `true` written to `.env` so existing users keep working |
 | `SSH_ENABLED` | `true` | Per-user sshd inside user containers |
 | `SSH_PORT_START` / `SSH_PORT_END` | `2222` / `2321` | Host port pool for user SSH |
 
@@ -443,11 +443,11 @@ it changes the meaning of that form. It becomes a real second factor: the proxy
 stops vouching for you, and the form has to be satisfied even when you arrive
 from the dashboard.
 
-> **Worth knowing.** With `UNIFIED_PASSWORD=true` the account password also
-> opens an SSH session on a port range that is reachable from the internet, and
-> sshd does not go through the platform's login throttling and lockout. If that
-> bothers you, have people register SSH keys and set `SSH_PASSWORD_AUTH=false`.
-> Key-based login keeps working and the exposure goes away.
+> **Worth knowing.** SSH is key-only by default (`SSH_PASSWORD_AUTH=false`):
+> the SSH ports are reachable from the internet and sshd does not go through
+> the platform's login throttling and lockout. Setting it to `true` lets the
+> account password open an SSH session too, at that cost. An install upgraded
+> from before 1.2.0 keeps `true` until you change it.
 
 ### GPU assignment
 
@@ -1192,8 +1192,8 @@ ssh -p <port> <username>@<server-ip>
   to the user as `REMOTE HOST IDENTIFICATION HAS CHANGED`. The pool takes a port
   back only when the account is deactivated or moved to the trash.
 * **Public keys** — paste an OpenSSH key on the dashboard; it is written to
-  `/platform/authorized_keys` and applies immediately. Password auth remains
-  as a fallback unless `SSH_PASSWORD_AUTH=false`.
+  `/platform/authorized_keys` and applies immediately. Password auth is off
+  unless `SSH_PASSWORD_AUTH=true`.
 * **Hardening** (`sshd_tail.conf`): `DisableForwarding yes` blocks tunnelling
   into the Docker network, root login is off, keep-alives hold long sessions.
 * Ports `2222–2321` must be open in the firewall.
@@ -1305,9 +1305,9 @@ trusted component, and these are the costs of that:
   `DATABASE_URL` to PostgreSQL.
 * GPUs are allocated whole. There is no MIG/MPS fractioning, so two users
   sharing one GPU can still exhaust each other's VRAM.
-* `UNIFIED_PASSWORD=true` gives the account password a second attack surface
-  in sshd, which the platform's login lockout does not cover. Prefer SSH keys
-  and set `SSH_PASSWORD_AUTH=false` on anything facing the internet.
+* With `SSH_PASSWORD_AUTH=true` the account password gains a second attack
+  surface in sshd, which the platform's login lockout does not cover. The
+  default is key-only; keep it that way on anything facing the internet.
 
 ---
 
@@ -1371,6 +1371,11 @@ If the platform is useful in work you publish, please cite it using
 it). Every release is archived on Zenodo: [10.5281/zenodo.23570943](https://doi.org/10.5281/zenodo.23570943)
 always resolves to the latest one, and each release also has a DOI of its own
 (v1.1.0: [10.5281/zenodo.23570944](https://doi.org/10.5281/zenodo.23570944)).
+
+The public history of this repository starts on 29 September 2026. The
+platform was developed and first deployed (from 18 September 2026) in a
+private repository whose history was not carried over; this repository
+starts from a copy of that code.
 
 ---
 

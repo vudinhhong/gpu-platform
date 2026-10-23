@@ -1,0 +1,43 @@
+{
+ "measured": "2026-10-22T19:58:32+08:00",
+ "setup_seconds": 301,
+ "jobs": {
+  "cuda": {
+   "id": 867,
+   "status": "succeeded",
+   "gpu_count": 1,
+   "runtime_s": 13,
+   "output_tail": [
+    "Build cuda_12.4.r12.4/compiler.34097967_0",
+    "device=NVIDIA GeForce RTX 4090 elements=16777216 errors=0"
+   ],
+   "note": "first attempt (job 863) failed: the pip nvcc 12.1 wheel ships ptxas but no nvcc; rerun with nvcc from conda-forge"
+  },
+  "r": {
+   "id": 864,
+   "status": "succeeded",
+   "gpus": null,
+   "gpu_count": 0,
+   "runtime_s": 10,
+   "output_tail": [
+    "R R version 4.6.1 (2026-06-24) slope=3.0008 cores=32"
+   ],
+   "note": "parallel::detectCores() reports the host's 32 cores, not the job's 8: a tool the cgroup-aware wrappers do not cover"
+  },
+  "ddp": {
+   "id": 865,
+   "status": "succeeded",
+   "gpus": null,
+   "gpu_count": 2,
+   "runtime_s": 10,
+   "output_tail": [
+    "WARNING:__main__:",
+    "*****************************************",
+    "Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. ",
+    "*****************************************",
+    "rank=1 world=2 gpu=NVIDIA GeForce RTX 4090 in_sync=True",
+    "rank=0 world=2 gpu=NVIDIA GeForce RTX 4090 in_sync=True"
+   ]
+  }
+ }
+}

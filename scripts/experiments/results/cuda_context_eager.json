@@ -1,0 +1,49 @@
+{
+ "torch": "2.4.1+cu121",
+ "cuda": "12.1",
+ "cudnn": 90100,
+ "gpu": "NVIDIA GeForce RTX 4090",
+ "module_loading": "EAGER",
+ "stages": {
+  "context": {
+   "nvidia_smi_mib": {
+    "min": 980,
+    "median": 980,
+    "max": 980
+   },
+   "torch_allocated_mib": 16,
+   "torch_reserved_mib": 16,
+   "overhead_mib": 964
+  },
+  "cublas": {
+   "nvidia_smi_mib": {
+    "min": 1398,
+    "median": 1398,
+    "max": 1398
+   },
+   "torch_allocated_mib": 28,
+   "torch_reserved_mib": 38,
+   "overhead_mib": 1360
+  },
+  "cudnn": {
+   "nvidia_smi_mib": {
+    "min": 1598,
+    "median": 1598,
+    "max": 1598
+   },
+   "torch_allocated_mib": 16,
+   "torch_reserved_mib": 38,
+   "overhead_mib": 1560
+  },
+  "both": {
+   "nvidia_smi_mib": {
+    "min": 1656,
+    "median": 1656,
+    "max": 1656
+   },
+   "torch_allocated_mib": 28,
+   "torch_reserved_mib": 38,
+   "overhead_mib": 1618
+  }
+ }
+}

@@ -1,0 +1,62 @@
+{
+ "computed": "2026-10-23T12:05:56+08:00",
+ "until": "2026-10-21",
+ "excluded_users": 6,
+ "period": {
+  "first": "2026-09-18T10:12",
+  "last": "2026-10-21T23:59",
+  "days": 33.6
+ },
+ "accounts": 4,
+ "users_with_activity": 4,
+ "jobs": {
+  "submitted": 831,
+  "started": 796,
+  "gpu": 817,
+  "cpu_only": 14,
+  "multi_gpu": 4,
+  "by_status": {
+   "failed": 157,
+   "succeeded": 618,
+   "cancelled": 52,
+   "timeout": 4
+  },
+  "per_user": {
+   "user1": 61,
+   "user2": 0,
+   "user3": 153,
+   "user4": 617
+  },
+  "stopped_for_vram_overrun": 11,
+  "oom_killed": 5,
+  "wait_s": {
+   "median": 6.641201499999999,
+   "p90": 289.756849,
+   "p99": 5353.893442,
+   "max": 11049.009899
+  },
+  "gpu_wait_s": {
+   "median": 6.692940500000001,
+   "p90": 290.263663,
+   "max": 11049.009899
+  }
+ },
+ "gpu_hours": {
+  "batch": 324.9,
+  "interactive": 1131.7
+ },
+ "cpu_core_hours": {
+  "batch": 4361.4,
+  "interactive": 38041.2
+ },
+ "interactive_sessions": {
+  "count": 53,
+  "open_at_cutoff": 3,
+  "by_end_reason": {
+   "null": 3,
+   "admin": 5,
+   "died": 11,
+   "user": 34
+  }
+ }
+}

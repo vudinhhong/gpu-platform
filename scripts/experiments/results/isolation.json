@@ -1,0 +1,493 @@
+{
+ "started": "2026-10-22T19:30:41+08:00",
+ "limits": {
+  "gpu_indices": [],
+  "memory_limit_mb": 4096,
+  "cpu_cores": 4,
+  "max_processes": 256
+ },
+ "applied": {
+  "expa": {
+   "memory.max": "4294967296",
+   "cpu.max": "400000 100000",
+   "pids.max": "256",
+   "io.max": "259:0 rbps=157286400 wbps=83886080 riops=max wiops=max"
+  },
+  "expb": {
+   "memory.max": "4294967296",
+   "cpu.max": "400000 100000",
+   "pids.max": "256",
+   "io.max": "259:0 rbps=157286400 wbps=83886080 riops=max wiops=max"
+  }
+ },
+ "attack_seconds": 40,
+ "trials": [
+  {
+   "attack": "none",
+   "cpu_ops": 37649243.90626049,
+   "mem_ms": 119.31303702294827,
+   "spawn_ms": 53.98248182609677,
+   "disk_mbs": 83.77357471606847,
+   "host_mem_available_mib": 51099,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.0023736506668460156,
+   "a_write_mbs": 0.0,
+   "rep": 0
+  },
+  {
+   "attack": "cpu",
+   "cpu_ops": 36570276.117699504,
+   "mem_ms": 119.05516171827912,
+   "spawn_ms": 57.20938369631767,
+   "disk_mbs": 83.78315966307255,
+   "host_mem_available_mib": 51054,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 3.3358153948673186,
+   "a_write_mbs": 0.0,
+   "rep": 0
+  },
+  {
+   "attack": "mem",
+   "cpu_ops": 41100421.555716984,
+   "mem_ms": 119.67355897650123,
+   "spawn_ms": 55.18363090232015,
+   "disk_mbs": 83.80261282058864,
+   "host_mem_available_mib": 49093,
+   "a_oom_kills": 1,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.021579320605882524,
+   "a_write_mbs": 0.0,
+   "rep": 0
+  },
+  {
+   "attack": "fork",
+   "cpu_ops": 36311084.050791584,
+   "mem_ms": 118.53689793497324,
+   "spawn_ms": 55.717573035508394,
+   "disk_mbs": 83.80184117808128,
+   "host_mem_available_mib": 49084,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 81,
+   "a_cpu_cores": 0.0028817131841193545,
+   "a_write_mbs": 0.0,
+   "rep": 0
+  },
+  {
+   "attack": "io",
+   "cpu_ops": 39240466.32654415,
+   "mem_ms": 120.87177718058228,
+   "spawn_ms": 53.38815599679947,
+   "disk_mbs": 83.77718744345401,
+   "host_mem_available_mib": 49600,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.006741905330675797,
+   "a_write_mbs": 69.85206556245458,
+   "rep": 0
+  },
+  {
+   "attack": "none",
+   "cpu_ops": 40997319.73903682,
+   "mem_ms": 123.22224117815495,
+   "spawn_ms": 53.23053291067481,
+   "disk_mbs": 82.93555540217756,
+   "host_mem_available_mib": 49434,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.0003750925514537191,
+   "a_write_mbs": 0.0,
+   "rep": 1
+  },
+  {
+   "attack": "cpu",
+   "cpu_ops": 39366743.51763437,
+   "mem_ms": 123.24924813583493,
+   "spawn_ms": 53.56390681117773,
+   "disk_mbs": 83.76950514911789,
+   "host_mem_available_mib": 50896,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 3.3361682258533154,
+   "a_write_mbs": 0.0,
+   "rep": 1
+  },
+  {
+   "attack": "mem",
+   "cpu_ops": 36797987.39177402,
+   "mem_ms": 115.29801972210407,
+   "spawn_ms": 53.55876171961427,
+   "disk_mbs": 83.76917348043686,
+   "host_mem_available_mib": 50777,
+   "a_oom_kills": 1,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.02140110064867778,
+   "a_write_mbs": 0.0,
+   "rep": 1
+  },
+  {
+   "attack": "fork",
+   "cpu_ops": 40137662.63547047,
+   "mem_ms": 119.86035900190473,
+   "spawn_ms": 55.19870202988386,
+   "disk_mbs": 83.74892876165639,
+   "host_mem_available_mib": 50641,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 21,
+   "a_cpu_cores": 0.006276420854072864,
+   "a_write_mbs": 0.0,
+   "rep": 1
+  },
+  {
+   "attack": "io",
+   "cpu_ops": 38731467.4802001,
+   "mem_ms": 125.61845174059272,
+   "spawn_ms": 105.81337613984942,
+   "disk_mbs": 83.69136917325882,
+   "host_mem_available_mib": 50288,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.017367898014172364,
+   "a_write_mbs": 69.83060925189224,
+   "rep": 1
+  },
+  {
+   "attack": "none",
+   "cpu_ops": 39199189.59370804,
+   "mem_ms": 110.53208308294415,
+   "spawn_ms": 103.63741079345345,
+   "disk_mbs": 83.69275915873058,
+   "host_mem_available_mib": 50284,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 1.5199496511259964e-05,
+   "a_write_mbs": 0.0,
+   "rep": 2
+  },
+  {
+   "attack": "cpu",
+   "cpu_ops": 37730282.93313971,
+   "mem_ms": 112.31682309880853,
+   "spawn_ms": 56.806230917572975,
+   "disk_mbs": 83.78643018850006,
+   "host_mem_available_mib": 50142,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 3.3327510171118733,
+   "a_write_mbs": 0.0,
+   "rep": 2
+  },
+  {
+   "attack": "mem",
+   "cpu_ops": 39433711.036379285,
+   "mem_ms": 117.28004738688469,
+   "spawn_ms": 54.10282965749502,
+   "disk_mbs": 83.7764897952964,
+   "host_mem_available_mib": 49626,
+   "a_oom_kills": 1,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.02424014749333634,
+   "a_write_mbs": 0.0,
+   "rep": 2
+  },
+  {
+   "attack": "fork",
+   "cpu_ops": 33041909.740662705,
+   "mem_ms": 116.08072929084301,
+   "spawn_ms": 53.67571488022804,
+   "disk_mbs": 83.77988828639086,
+   "host_mem_available_mib": 49660,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 1,
+   "a_cpu_cores": 0.0027259931545810007,
+   "a_write_mbs": 0.0,
+   "rep": 2
+  },
+  {
+   "attack": "io",
+   "cpu_ops": 41124515.710612476,
+   "mem_ms": 117.99101810902357,
+   "spawn_ms": 52.04162513837218,
+   "disk_mbs": 83.78287263529383,
+   "host_mem_available_mib": 49565,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.007247665682567575,
+   "a_write_mbs": 69.84924010513585,
+   "rep": 2
+  },
+  {
+   "attack": "none",
+   "cpu_ops": 39401915.30220889,
+   "mem_ms": 119.03091985732317,
+   "spawn_ms": 53.44961816444993,
+   "disk_mbs": 83.80614942173086,
+   "host_mem_available_mib": 49565,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.0002497424992042522,
+   "a_write_mbs": 0.0,
+   "rep": 3
+  },
+  {
+   "attack": "cpu",
+   "cpu_ops": 37887866.944208115,
+   "mem_ms": 117.45095672085881,
+   "spawn_ms": 52.947781048715115,
+   "disk_mbs": 83.79127115011224,
+   "host_mem_available_mib": 49421,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 3.33402613255161,
+   "a_write_mbs": 0.0,
+   "rep": 3
+  },
+  {
+   "attack": "mem",
+   "cpu_ops": 40907051.21586893,
+   "mem_ms": 119.35970885679126,
+   "spawn_ms": 51.737599074840546,
+   "disk_mbs": 83.80291988162242,
+   "host_mem_available_mib": 49637,
+   "a_oom_kills": 1,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.0214697060532748,
+   "a_write_mbs": 0.0,
+   "rep": 3
+  },
+  {
+   "attack": "fork",
+   "cpu_ops": 37177834.40805873,
+   "mem_ms": 118.69029188528657,
+   "spawn_ms": 52.4114859290421,
+   "disk_mbs": 83.70117576873248,
+   "host_mem_available_mib": 49476,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 141,
+   "a_cpu_cores": 0.002787535279866903,
+   "a_write_mbs": 0.0,
+   "rep": 3
+  },
+  {
+   "attack": "io",
+   "cpu_ops": 37846223.15079242,
+   "mem_ms": 120.55335566401482,
+   "spawn_ms": 51.839597057551146,
+   "disk_mbs": 83.78128476738031,
+   "host_mem_available_mib": 49438,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.007216502956928254,
+   "a_write_mbs": 69.84702254126228,
+   "rep": 3
+  },
+  {
+   "attack": "none",
+   "cpu_ops": 41085039.538295045,
+   "mem_ms": 119.7118847630918,
+   "spawn_ms": 52.52218898385763,
+   "disk_mbs": 83.75236992034293,
+   "host_mem_available_mib": 49551,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 1.2197277856001128e-05,
+   "a_write_mbs": 0.0,
+   "rep": 4
+  },
+  {
+   "attack": "cpu",
+   "cpu_ops": 36917851.952699274,
+   "mem_ms": 118.86999011039734,
+   "spawn_ms": 53.554095793515444,
+   "disk_mbs": 83.80196602090388,
+   "host_mem_available_mib": 49395,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 3.3321110445201043,
+   "a_write_mbs": 0.0,
+   "rep": 4
+  },
+  {
+   "attack": "mem",
+   "cpu_ops": 38513787.20499764,
+   "mem_ms": 118.49883897230029,
+   "spawn_ms": 54.18309383094311,
+   "disk_mbs": 83.76522220367787,
+   "host_mem_available_mib": 49424,
+   "a_oom_kills": 1,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.021507470921262494,
+   "a_write_mbs": 0.0,
+   "rep": 4
+  },
+  {
+   "attack": "fork",
+   "cpu_ops": 37374793.04692244,
+   "mem_ms": 118.65811562165618,
+   "spawn_ms": 53.54417720809579,
+   "disk_mbs": 83.77153038572183,
+   "host_mem_available_mib": 49454,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 61,
+   "a_cpu_cores": 0.002974364401985114,
+   "a_write_mbs": 0.0,
+   "rep": 4
+  },
+  {
+   "attack": "io",
+   "cpu_ops": 39040684.73249533,
+   "mem_ms": 119.8259829543531,
+   "spawn_ms": 54.557288996875286,
+   "disk_mbs": 83.8173692955108,
+   "host_mem_available_mib": 49488,
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.0070292317984690595,
+   "a_write_mbs": 69.8477494651646,
+   "rep": 4
+  }
+ ],
+ "summary": [
+  {
+   "attack": "none",
+   "n": 5,
+   "cpu_ops": [
+    39666541.61590186,
+    1426625.5479907903,
+    1.0
+   ],
+   "mem_ms": [
+    118.36203318089247,
+    4.693177423145549,
+    1.0
+   ],
+   "spawn_ms": [
+    63.36444653570652,
+    22.519366597052784,
+    1.0
+   ],
+   "disk_mbs": [
+    83.59208172381008,
+    0.36933039015841373,
+    1.0
+   ],
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.0006051764983742497,
+   "a_write_mbs": 0.0
+  },
+  {
+   "attack": "cpu",
+   "n": 5,
+   "cpu_ops": [
+    37694604.293076195,
+    1084219.8863943878,
+    0.9502871376607449
+   ],
+   "mem_ms": [
+    118.18843595683575,
+    3.9321515325245557,
+    0.9985333369207049
+   ],
+   "spawn_ms": [
+    54.81627965345979,
+    2.021118864751085,
+    0.8650952174350682
+   ],
+   "disk_mbs": [
+    83.78646643434132,
+    0.011852676107792764,
+    1.0023253962160374
+   ],
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 3.3341743629808445,
+   "a_write_mbs": 0.0
+  },
+  {
+   "attack": "mem",
+   "n": 5,
+   "cpu_ops": [
+    39350591.68094737,
+    1782372.7226514365,
+    0.9920348504789279
+   ],
+   "mem_ms": [
+    118.02203478291631,
+    1.782908415506059,
+    0.9971274707873888
+   ],
+   "spawn_ms": [
+    53.75318303704262,
+    1.2702003289382895,
+    0.8483177235163278
+   ],
+   "disk_mbs": [
+    83.78328363632444,
+    0.018239158547300474,
+    1.0022873208630705
+   ],
+   "a_oom_kills": 5,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.02203954914448679,
+   "a_write_mbs": 0.0
+  },
+  {
+   "attack": "fork",
+   "n": 5,
+   "cpu_ops": [
+    36808656.77638119,
+    2548285.9071711726,
+    0.927952255903878
+   ],
+   "mem_ms": [
+    118.36527874693274,
+    1.3852140003561777,
+    1.000027420668208
+   ],
+   "spawn_ms": [
+    54.10953061655164,
+    1.3382143997785259,
+    0.8539415015021138
+   ],
+   "disk_mbs": [
+    83.76067287611657,
+    0.03827458884502275,
+    1.0020168316044995
+   ],
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 305,
+   "a_cpu_cores": 0.0035292053749250473,
+   "a_write_mbs": 0.0
+  },
+  {
+   "attack": "io",
+   "n": 5,
+   "cpu_ops": [
+    39196671.48012889,
+    1202389.1511045927,
+    0.9881544970488528
+   ],
+   "mem_ms": [
+    120.9721171297133,
+    2.827296832041492,
+    1.0220516991697146
+   ],
+   "spawn_ms": [
+    63.5280086658895,
+    23.663784029640517,
+    1.0025812918620036
+   ],
+   "disk_mbs": [
+    83.77001666297956,
+    0.0468277848626134,
+    1.0021286099771671
+   ],
+   "a_oom_kills": 0,
+   "a_pids_max_hits": 0,
+   "a_cpu_cores": 0.00912064075656261,
+   "a_write_mbs": 69.8453373851819
+  }
+ ]
+}
