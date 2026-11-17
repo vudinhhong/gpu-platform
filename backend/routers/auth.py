@@ -1,7 +1,11 @@
 """Authentication endpoints: login, logout, current-user info, password change."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from urllib.parse import quote
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 import models
@@ -18,7 +22,7 @@ from config import settings
 from database import get_db
 from routers.proxy import PROXY_COOKIE
 from schemas import MessageResponse, SelfPasswordChange, UserResponse
-from services import audit, ratelimit
+from services import audit, oidc, ratelimit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -146,6 +150,116 @@ async def login(
     audit.record(db, "auth.login", actor=user.username, ip_address=ip)
     return {
         "access_token": token,
+        "token_type": "bearer",
+        "user": UserResponse.model_validate(user).model_dump(mode="json"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Sign-in through an OpenID Connect provider (services/oidc.py)
+# ---------------------------------------------------------------------------
+
+def _to_login(error: str) -> RedirectResponse:
+    response = RedirectResponse("/login?oidc_error=" + quote(error), status_code=302)
+    response.delete_cookie(oidc.STATE_COOKIE, path="/api/auth/oidc")
+    return response
+
+
+@router.get("/oidc/config")
+async def oidc_config():
+    """Whether the login page should offer the provider, and under what name."""
+    return {"enabled": oidc.enabled(), "label": settings.OIDC_LABEL}
+
+
+@router.get("/oidc/login")
+async def oidc_login(request: Request):
+    if not oidc.enabled():
+        raise HTTPException(status_code=404, detail="Single sign-on is not configured.")
+    try:
+        started = await oidc.start()
+    except Exception:  # noqa: BLE001 (provider unreachable)
+        return _to_login(f"{settings.OIDC_LABEL} cannot be reached. Try again later.")
+    response = RedirectResponse(started["url"], status_code=302)
+    response.set_cookie(
+        key=oidc.STATE_COOKIE, value=started["cookie"], max_age=oidc.STATE_TTL,
+        httponly=True, samesite="lax", secure=_cookie_secure(request),
+        path="/api/auth/oidc",
+    )
+    return response
+
+
+@router.get("/oidc/callback")
+async def oidc_callback(
+    request: Request,
+    code: str = None,
+    state: str = None,
+    error: str = None,
+    db: Session = Depends(get_db),
+):
+    if not oidc.enabled():
+        raise HTTPException(status_code=404, detail="Single sign-on is not configured.")
+    ip = audit.client_ip(request)
+    key = f"ip:{ip or 'unknown'}"
+    allowed, retry_after = ratelimit.check(key)
+    if not allowed:
+        return _to_login(f"Too many failed attempts. Try again in {retry_after}s.")
+    if error:
+        return _to_login("The sign-in was cancelled.")
+    try:
+        email = await oidc.finish(code, state, request.cookies.get(oidc.STATE_COOKIE))
+    except oidc.OIDCError as exc:
+        ratelimit.record_failure(key)
+        return _to_login(str(exc))
+    except Exception:  # noqa: BLE001 (provider unreachable or answering nonsense)
+        return _to_login(f"{settings.OIDC_LABEL} cannot be reached. Try again later.")
+
+    user = (db.query(models.User)
+            .filter(func.lower(models.User.email) == email.lower(),
+                    models.User.deleted_at.is_(None))
+            .first())
+    if user is None:
+        ratelimit.record_failure(key)
+        audit.record(db, "auth.login_failed", actor=email, ip_address=ip,
+                     detail=f"{settings.OIDC_LABEL}: no account with this email")
+        return _to_login(f"No account here uses {email}. Ask an administrator to "
+                         "set it as your account's email.")
+    if not user.is_active:
+        audit.record(db, "auth.login_denied", actor=user.username, ip_address=ip,
+                     detail="account deactivated")
+        return _to_login("Account is deactivated. Contact an administrator.")
+    ratelimit.record_success(key)
+    response = RedirectResponse(
+        "/login#oidc=" + oidc.handoff(user.username, int(user.token_version or 0)),
+        status_code=302,
+    )
+    response.delete_cookie(oidc.STATE_COOKIE, path="/api/auth/oidc")
+    return response
+
+
+@router.post("/oidc/exchange", response_model=dict)
+async def oidc_exchange(
+    request: Request,
+    response: Response,
+    token: str = Body(..., embed=True),
+    db: Session = Depends(get_db),
+):
+    """Trade the hand-off token from the callback for a session token."""
+    try:
+        claims = oidc.redeem(token)
+    except oidc.OIDCError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+    user = (db.query(models.User)
+            .filter(models.User.username == claims["sub"], models.User.deleted_at.is_(None))
+            .first())
+    if user is None or not user.is_active or int(user.token_version or 0) != claims["ver"]:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="The sign-in expired. Please try again.")
+    session_token = create_access_token(user)
+    _set_proxy_cookie(response, request, session_token)
+    audit.record(db, "auth.login", actor=user.username, ip_address=audit.client_ip(request),
+                 detail=settings.OIDC_LABEL)
+    return {
+        "access_token": session_token,
         "token_type": "bearer",
         "user": UserResponse.model_validate(user).model_dump(mode="json"),
     }

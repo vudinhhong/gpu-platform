@@ -148,6 +148,10 @@ class GpuAssignmentCreate(BaseModel):
     # form no longer offers it.  Kept so old assignments still deserialize.
     cpu_limit_seconds: Optional[int]   = None
     max_processes:     Optional[int]   = None   # cgroup pids.max
+    # Per card, enforced only with GPU_HARD_VRAM_LIMIT; None = whole card.
+    gpu_memory_limit_mb: Optional[int] = None
+    # Node the GPUs are on (and the workspace runs on); None = the master.
+    node_id:           Optional[int]   = None
 
 
 class GpuAssignmentUpdate(BaseModel):
@@ -164,6 +168,8 @@ class GpuAssignmentUpdate(BaseModel):
     cpu_cores:         Optional[float]     = None
     cpu_limit_seconds: Optional[int]       = None
     max_processes:     Optional[int]       = None
+    gpu_memory_limit_mb: Optional[int]     = None
+    node_id:           Optional[int]       = None
 
 
 class GpuAssignmentResponse(BaseModel):
@@ -174,6 +180,8 @@ class GpuAssignmentResponse(BaseModel):
     cpu_cores:         Optional[float] = None
     cpu_limit_seconds: Optional[int]
     max_processes:     Optional[int] = None
+    gpu_memory_limit_mb: Optional[int] = None
+    node_id:           Optional[int] = None
     created_at:        datetime
     updated_at:        datetime
 

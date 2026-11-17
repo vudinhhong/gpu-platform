@@ -258,6 +258,8 @@ def _get_process_name(pid: int, known: Optional[str] = None) -> str:
 
 _OWNER_CACHE: Dict[str, Any] = {"at": float("-inf"), "map": {}}
 _OWNER_TTL = 10  # seconds, `docker top` on every container is not free
+_USAGE_CACHE: Dict[str, Any] = {"at": float("-inf"), "map": {}}
+_USAGE_TTL = 5  # seconds
 
 
 def platform_gpu_usage() -> Dict[int, Dict[str, int]]:
@@ -268,26 +270,32 @@ def platform_gpu_usage() -> Dict[int, Dict[str, int]]:
     the host-wide view for "which user" always came back empty.  Each
     container can see its own processes, and the platform already knows which
     physical GPU each one was pinned to.
+
+    That is one ``docker exec`` per container with a GPU, and every job list
+    and queue request ends up here, so the answer is kept for _USAGE_TTL
+    seconds: it only says who is on which card, and nothing enforces from it.
     """
+    if time.monotonic() - _USAGE_CACHE["at"] < _USAGE_TTL:
+        return {i: dict(u) for i, u in _USAGE_CACHE["map"].items()}
     usage: Dict[int, Dict[str, int]] = {}
     try:
         from services import container_manager
 
+        by_uuid = index_by_uuid()
         # role=None: a batch job holds a card exactly as a workspace does.
         for container in container_manager.list_platform_containers(role=None):
             username = (container.labels or {}).get(container_manager.LABEL_USER)
             if not username:
                 continue
-            megabytes = container_manager.container_gpu_memory_mb(container)
-            if not megabytes:
-                continue
             # The container sees its GPUs renumbered from 0; the device request
-            # records which physical cards those are.
+            # records which physical cards those are.  No card, nothing to ask.
             requests = (container.attrs.get("HostConfig") or {}).get("DeviceRequests") or []
             uuids = [u for r in requests for u in (r.get("DeviceIDs") or [])]
-            by_uuid = index_by_uuid()
             indices = [by_uuid[u] for u in uuids if u in by_uuid]
             if not indices:
+                continue
+            megabytes = container_manager.container_gpu_memory_mb(container)
+            if not megabytes:
                 continue
             share = megabytes // len(indices)
             for index in indices:
@@ -296,7 +304,9 @@ def platform_gpu_usage() -> Dict[int, Dict[str, int]]:
                 )
     except Exception as exc:  # noqa: BLE001 (docker unavailable)
         logger.debug("Per-container GPU usage unavailable: %s", exc)
-    return usage
+        return usage
+    _USAGE_CACHE.update({"at": time.monotonic(), "map": usage})
+    return {i: dict(u) for i, u in usage.items()}
 
 
 def pid_owner_map() -> Dict[int, Dict[str, str]]:

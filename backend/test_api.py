@@ -11,6 +11,7 @@ so the full user/admin workflow can be verified anywhere.
 import os
 import sys
 import tempfile
+import time
 
 # Point SQLAlchemy at a throwaway DB *before* importing the app modules.
 _TEST_DB = os.path.join(tempfile.gettempdir(), "gpu_platform_test.db")
@@ -21,6 +22,10 @@ os.environ["JUPYTER_DATA_DIR"] = tempfile.mkdtemp(prefix="gpu_jupyter_test_")
 # The suite has no GPUs; simulated ones keep the assignment paths exercisable.
 os.environ["ALLOW_MOCK_GPU"] = "true"
 os.environ["SECRET_KEY"] = "test-secret-key-not-used-in-production-0123456789"
+# Tests run scheduling passes themselves.  The app's own periodic pass would
+# otherwise run beside them every ten seconds and start jobs a test expects
+# to find still queued.
+os.environ["JOB_SCHEDULER_INTERVAL"] = "86400"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -34,6 +39,10 @@ from routers import proxy  # noqa: E402
 from services import container_manager, ratelimit, session_backend  # noqa: E402
 
 FAKE_CONTAINER_ID = "f" * 64
+# The fixture below stubs the session seam; the tests of workspaces on other
+# nodes put these back and stub the node instead.
+_REAL_BACKEND = {name: getattr(session_backend, name) for name in (
+    "start_session", "is_alive", "stop_session", "get_logs", "wait_for_ready")}
 ADMIN_PW = "admin123"
 # Every password created through the API must satisfy the platform policy
 # (>= 10 chars, a letter and a digit).
@@ -59,8 +68,8 @@ def client():
     session_backend.stop_session = lambda username, container_id=None: True
     session_backend.generate_token = lambda: "testtoken" * 8
     session_backend.get_state = lambda username: None
-    session_backend.get_logs = lambda username, tail=40: ""
-    session_backend.wait_for_ready = lambda username, timeout=60: True
+    session_backend.get_logs = lambda username, tail=40, **kw: ""
+    session_backend.wait_for_ready = lambda username, **kw: True
     session_backend.self_heal = lambda sessions: []
 
     container_manager.resolve_image = lambda requested=None: "gpu-jupyter:latest"
@@ -108,9 +117,18 @@ def _no_leftover_runs():
         db.query(models.UsageRecord).delete()
         db.query(models.JupyterSession).delete()
         db.query(models.Job).delete()
+        # A joined node left behind by a node test is a ready place to put the
+        # next test's jobs, and its heartbeat lives in memory, not the table.
+        db.query(models.Node).filter(models.Node.is_local.is_(False)).delete()
         db.commit()
     finally:
         db.close()
+    from services import gpu_monitor, nodes
+
+    for state in (nodes._telemetry, nodes._last_written, nodes._queues, nodes._waiting,
+                  nodes._boots):
+        state.clear()
+    gpu_monitor._USAGE_CACHE.update({"at": float("-inf"), "map": {}})
     yield
 
 
@@ -1759,10 +1777,10 @@ def test_a_workspace_is_mounted_at_a_home_shaped_path(client):
 
 
 def test_a_mapped_home_keeps_its_own_absolute_path(client, tmp_path):
-    """/home/trongchi/miniconda3 has to still be that exact path."""
+    """/home/hoang/miniconda3 has to still be that exact path."""
     from services import workspaces
 
-    home = tmp_path / "trongchi"
+    home = tmp_path / "hoang"
     home.mkdir()
 
     db = SessionLocal()
@@ -1992,10 +2010,10 @@ def test_a_host_account_that_is_a_platform_account_is_that_user(monkeypatch):
 
     monkeypatch.setattr(gpu_monitor, "process_uid", lambda pid: 4321)
     monkeypatch.setattr(gpu_monitor, "platform_uid_map", lambda: {})
-    monkeypatch.setattr(gpu_monitor, "_os_username", lambda uid: "trongchi")
-    monkeypatch.setattr(gpu_monitor, "platform_usernames", lambda: {"trongchi", "uet"})
+    monkeypatch.setattr(gpu_monitor, "_os_username", lambda uid: "hoang")
+    monkeypatch.setattr(gpu_monitor, "platform_usernames", lambda: {"hoang", "lab2"})
 
-    assert gpu_monitor._process_owner(999, {}) == "trongchi"
+    assert gpu_monitor._process_owner(999, {}) == "hoang"
 
 
 def test_a_host_account_the_platform_does_not_know_stays_outside(monkeypatch):
@@ -2009,7 +2027,7 @@ def test_a_host_account_the_platform_does_not_know_stays_outside(monkeypatch):
     monkeypatch.setattr(gpu_monitor, "process_uid", lambda pid: 1000)
     monkeypatch.setattr(gpu_monitor, "platform_uid_map", lambda: {})
     monkeypatch.setattr(gpu_monitor, "_os_username", lambda uid: "ubuntu")
-    monkeypatch.setattr(gpu_monitor, "platform_usernames", lambda: {"trongchi", "uet"})
+    monkeypatch.setattr(gpu_monitor, "platform_usernames", lambda: {"hoang", "lab2"})
 
     assert gpu_monitor._process_owner(999, {}) is None
 
@@ -2033,6 +2051,36 @@ def test_a_batch_jobs_processes_are_attributed_too(monkeypatch):
     gpu_monitor.pid_owner_map()
 
     assert asked["role"] is None, "job containers were filtered out of attribution"
+
+
+def test_gpu_usage_asks_only_containers_with_a_card_and_is_kept(monkeypatch):
+    """Every job list and queue request reads who is on which card.
+
+    That reading used to ``docker exec`` into every platform container, with
+    or without a GPU, on every request, so a dashboard poll cost a quarter of a
+    second with a dozen workspaces open and more with each one added.
+    """
+    from services import container_manager, gpu_monitor
+
+    class C:
+        def __init__(self, user, uuids):
+            self.labels = {container_manager.LABEL_USER: user}
+            self.attrs = {"HostConfig": {"DeviceRequests":
+                                         [{"DeviceIDs": uuids}] if uuids else None}}
+
+    asked = []
+    monkeypatch.setattr(container_manager, "list_platform_containers",
+                        lambda role="jupyter": [C("a", ["GPU-0"]), C("b", [])])
+    monkeypatch.setattr(container_manager, "container_gpu_memory_mb",
+                        lambda c: asked.append(c.labels[container_manager.LABEL_USER]) or 1000)
+    monkeypatch.setattr(gpu_monitor, "index_by_uuid", lambda: {"GPU-0": 0})
+    # Its own cache, put back afterwards: what this test stores must not
+    # answer for the next one.
+    monkeypatch.setattr(gpu_monitor, "_USAGE_CACHE", {"at": float("-inf"), "map": {}})
+
+    assert gpu_monitor.platform_gpu_usage() == {0: {"a": 1000}}
+    assert gpu_monitor.platform_gpu_usage() == {0: {"a": 1000}}
+    assert asked == ["a"], "a container without a GPU was asked, or the reading was not kept"
 
 
 def _fake_nvidia_smi(monkeypatch, uuid="GPU-test-0"):
@@ -2713,6 +2761,53 @@ def test_stopping_a_job_is_actually_written_down(client, monkeypatch):
         assert "30000" in stored.message
     finally:
         db.close()
+
+
+def test_a_job_that_ended_unseen_is_charged_until_it_exited(client, monkeypatch):
+    """A node out of reach when its job ends reports the exit only when it is
+    back; the owner must not be charged for the outage."""
+    from services import container_manager, jobs as job_service
+
+    user_id, _ = _job_user(client, "lateexit")
+    started = datetime.utcnow() - timedelta(seconds=300)
+    exited = started + timedelta(seconds=120)
+    states = {
+        "late": exited.strftime("%Y-%m-%dT%H:%M:%S.123456789Z"),
+        "future": (datetime.utcnow() + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "unset": "0001-01-01T00:00:00Z",
+    }
+    monkeypatch.setattr(container_manager, "remove_job_container", lambda job_id: None)
+
+    ids = {}
+    db = SessionLocal()
+    try:
+        for name in states:
+            job = models.Job(
+                user_id=user_id, username="lateexit", script="job.sh", workdir="",
+                gpu_count=0, status=models.JobStatus.running, started_at=started,
+            )
+            db.add(job)
+            db.commit()
+            ids[job.id] = name
+    finally:
+        db.close()
+    monkeypatch.setattr(container_manager, "job_container_state",
+                        lambda job_id: {"running": False, "exit_code": 0,
+                                        "oom_killed": False, "status": "exited",
+                                        "finished_at": states[ids[job_id]]})
+
+    job_service.scheduler_pass()
+
+    db = SessionLocal()
+    try:
+        runtime = {ids[j.id]: j.runtime_seconds
+                   for j in db.query(models.Job).filter(models.Job.id.in_(ids))}
+    finally:
+        db.close()
+    assert abs(runtime["late"] - 120) < 1
+    # A clock ahead of the master's, or no time at all: charged until now.
+    assert runtime["future"] >= 299
+    assert runtime["unset"] >= 299
 
 
 def test_a_note_on_a_running_job_is_written_down_too(client, monkeypatch):
@@ -4007,8 +4102,8 @@ def test_placement_holds_back_the_grace_a_job_may_still_grow_into(client):
             "what it may hold before being stopped"
         # Checked against the formula rather than as a delta: the card in the
         # test environment may already be full, and free_mb is clamped at zero.
-        assert after["free_mb"] == max(0, after["total_mb"]
-                                       - max(after["used_mb"], after["entitled_mb"])
+        assert after["free_mb"] == max(0, after["total_mb"] - after["entitled_mb"]
+                                       - after["outside_mb"]
                                        - settings.JOB_GPU_HEADROOM_MB), \
             "free space is measured against the allowance, not the request"
     finally:
@@ -4157,3 +4252,861 @@ def test_a_workspace_with_no_gpu_is_still_audited():
     found = {f["setting"] for f in limit_audit.audit(c)}
     assert "swap" in found, "a GPU-less workspace is audited like any other"
     assert "GPU devices" not in found, "and is not accused of losing a GPU it never had"
+
+
+def test_a_named_instance_keeps_to_its_own_containers(monkeypatch):
+    """A test stack beside production shares the Docker daemon.  Its names
+    and labels must differ from production's, or each would reconcile, audit
+    and remove the other's containers as its own."""
+    import importlib
+    from config import settings as cfg
+
+    assert container_manager.container_name("alice") == "gpu-jupyter-alice"
+    assert container_manager.job_container_name(7) == "gpu-job-7"
+    assert container_manager.LABEL_USER == "gpu-platform.user"
+
+    # A reload rebuilds the module and with it drops the stand-ins the client
+    # fixture put there (image_exists and the rest); every workspace start
+    # after this test then failed with "image not available".  Put the
+    # module back exactly as it was.
+    before = dict(vars(container_manager))
+    monkeypatch.setattr(cfg, "INSTANCE_NAME", "Dev")
+    try:
+        named = importlib.reload(container_manager)
+        assert named.container_name("alice") == "gpu-dev-jupyter-alice"
+        assert named.job_container_name(7) == "gpu-dev-job-7"
+        assert {named.LABEL_USER, named.LABEL_ROLE, named.LABEL_JOB} == {
+            "gpu-platform-dev.user", "gpu-platform-dev.role", "gpu-platform-dev.job"}
+    finally:
+        monkeypatch.setattr(cfg, "INSTANCE_NAME", "")
+        importlib.reload(container_manager)
+        vars(container_manager).update(before)
+
+
+def test_hard_vram_limit_is_off_unless_asked_for_and_buildable(monkeypatch, tmp_path):
+    """No flag, no build, or a build for another driver: no hard limit, and the
+    after-the-fact check stays the only enforcement.  A library that loads
+    without enforcing would look like a limit and be none."""
+    import json as _json
+    from config import settings as cfg
+
+    monkeypatch.setattr(cfg, "GPU_HARD_VRAM_LIMIT", False)
+    assert container_manager.hami_kwargs("gpu-job-1", 5000) == {}
+
+    monkeypatch.setattr(cfg, "GPU_HARD_VRAM_LIMIT", True)
+    monkeypatch.setattr(cfg, "HAMI_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "HAMI_HOST_DIR", "/host/hami")
+    assert "no build" in container_manager.hami_status()["reason"]
+    assert container_manager.hami_kwargs("gpu-job-1", 5000) == {}
+
+    (tmp_path / "libvgpu.so").write_bytes(b"\x7fELF")
+    (tmp_path / "build-info.json").write_text(_json.dumps({"driver": "570.124.04"}))
+    monkeypatch.setattr(container_manager, "_driver_version", lambda: "575.51.03")
+    assert "rebuild" in container_manager.hami_status()["reason"]
+    assert container_manager.hami_kwargs("gpu-job-1", 5000) == {}
+
+
+def test_hard_vram_limit_files_override_what_the_user_can_set(monkeypatch, tmp_path):
+    import json as _json
+    import stat
+    from config import settings as cfg
+
+    monkeypatch.setattr(cfg, "GPU_HARD_VRAM_LIMIT", True)
+    monkeypatch.setattr(cfg, "HAMI_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "HAMI_HOST_DIR", "/host/hami")
+    (tmp_path / "libvgpu.so").write_bytes(b"\x7fELF")
+    (tmp_path / "build-info.json").write_text(_json.dumps({"driver": "570.124.04", "sha256": "abc"}))
+    monkeypatch.setattr(container_manager, "_driver_version", lambda: "570.124.04")
+    assert "not been verified" in container_manager.hami_status()["reason"], \
+        "a build that loads is not yet a build that enforces"
+    (tmp_path / "verified.json").write_text(_json.dumps({"driver": "570.124.04", "sha256": "abc"}))
+
+    kw = container_manager.hami_kwargs("gpu-job-9", 11264)
+    vols = kw["volumes"]
+    binds = {v["bind"]: (k, v["mode"]) for k, v in vols.items()}
+    assert binds["/etc/ld.so.preload"] == ("/host/hami/run/gpu-job-9/ld.so.preload", "ro")
+    assert binds["/overrideEnv"] == ("/host/hami/run/gpu-job-9/overrideEnv", "ro")
+    assert binds["/usr/local/vgpu/libvgpu.so"] == ("/host/hami/libvgpu.so", "ro")
+    assert binds["/run/vgpu/usage.cache"][1] == "rw"
+
+    run = tmp_path / "run" / "gpu-job-9"
+    env = dict(l.split("=", 1) for l in (run / "overrideEnv").read_text().split())
+    # Every index HAMi-core knows gets the limit, so renumbering the visible
+    # devices cannot land on an index without one.
+    assert all(env[f"CUDA_DEVICE_MEMORY_LIMIT_{i}"] == "11264m" for i in range(16))
+    assert env["CUDA_DEVICE_MEMORY_SHARED_CACHE"] == "/run/vgpu/usage.cache"
+    assert (run / "ld.so.preload").read_text().strip() == "/usr/local/vgpu/libvgpu.so"
+    assert stat.S_IMODE((run / "overrideEnv").stat().st_mode) == 0o644
+    assert stat.S_IMODE((run / "usage.cache").stat().st_mode) == 0o666
+
+
+def test_workspace_gpu_memory_limit_is_stored_validated_and_clearable(client, cputest):
+    token = _login(client, "admin", ADMIN_PW)
+    rows = client.get("/api/admin/gpu/assignments", headers=_auth(token)).json()
+    row = next(r for r in rows if r["user_id"] == cputest)
+    # Other tests share this account; start from no ceiling, which is what an
+    # assignment that never set one has.
+    res = client.put(f"/api/admin/gpu/assignments/{row['id']}", headers=_auth(token),
+                     json={"gpu_memory_limit_mb": None})
+    assert res.status_code == 200 and res.json()["gpu_memory_limit_mb"] is None
+    cores = res.json()["cpu_cores"]
+
+    res = client.put(f"/api/admin/gpu/assignments/{row['id']}", headers=_auth(token),
+                     json={"gpu_memory_limit_mb": 512})
+    assert res.status_code == 400, "below a CUDA context's size every GPU program would fail"
+
+    res = client.put(f"/api/admin/gpu/assignments/{row['id']}", headers=_auth(token),
+                     json={"gpu_memory_limit_mb": 16384})
+    assert res.status_code == 200 and res.json()["gpu_memory_limit_mb"] == 16384
+    # Other limits are untouched by a save that only names this one.
+    assert res.json()["cpu_cores"] == cores
+
+    res = client.put(f"/api/admin/gpu/assignments/{row['id']}", headers=_auth(token),
+                     json={"gpu_memory_limit_mb": None})
+    assert res.status_code == 200 and res.json()["gpu_memory_limit_mb"] is None
+
+
+def test_an_image_that_cannot_load_the_library_gets_no_promised_limit(monkeypatch, tmp_path):
+    """ld.so skips a preload it cannot load and runs the program anyway, so an
+    image on an older glibc would carry the files of a limit and none of it."""
+    import json as _json
+    from config import settings as cfg
+
+    monkeypatch.setattr(cfg, "GPU_HARD_VRAM_LIMIT", True)
+    monkeypatch.setattr(cfg, "HAMI_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "HAMI_HOST_DIR", "/host/hami")
+    (tmp_path / "libvgpu.so").write_bytes(b"\x7fELF")
+    (tmp_path / "build-info.json").write_text(_json.dumps({"driver": "570.124.04", "sha256": "abc"}))
+    (tmp_path / "verified.json").write_text(_json.dumps({"driver": "570.124.04", "sha256": "abc"}))
+    monkeypatch.setattr(container_manager, "_driver_version", lambda: "570.124.04")
+    container_manager._HAMI_IMAGES.clear()
+
+    runs = []
+
+    class _Images:
+        def get(self, ref):
+            return type("I", (), {"id": f"sha256:{ref}"})()
+
+    class _Containers:
+        def run(self, image, cmd, **kw):
+            runs.append(image)
+            if "old" in image:
+                return (b"/usr/local/vgpu/libvgpu.so: /lib/x86_64-linux-gnu/libc.so.6: "
+                        b"version `GLIBC_2.34' not found\n")
+            return b"\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000)\n"
+
+    class _Client:
+        images = _Images()
+        containers = _Containers()
+
+    monkeypatch.setattr(container_manager, "_docker_client", lambda: _Client())
+    assert container_manager.hami_kwargs("gpu-job-1", 4096, image="old-focal") == {}
+    assert container_manager.hami_kwargs("gpu-job-2", 4096, image="jammy")["volumes"]
+    assert container_manager.hami_kwargs("gpu-job-3", 4096, image="jammy")["volumes"]
+    assert runs == ["sha256:old-focal", "sha256:jammy"], "each image is checked once"
+    container_manager._HAMI_IMAGES.clear()
+
+
+def test_a_workspace_without_an_ssh_port_still_runs_as_its_owner(monkeypatch, tmp_path):
+    """With the SSH port range used up, a workspace started without SSH, and
+    with it went the account name and uid: it ran as "jupyter", uid 1000."""
+    from services import container_manager as cm
+    from config import settings as cfg
+
+    class _Stop(Exception):
+        pass
+
+    seen = {}
+
+    def capture(client, kwargs, name, ports):
+        seen.update(kwargs["environment"])
+        raise _Stop
+
+    monkeypatch.setattr(cfg, "JUPYTER_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "SSH_ENABLED", True)
+    monkeypatch.setattr(cm, "_docker_client", lambda: object())
+    monkeypatch.setattr(cm, "ensure_image", lambda ref: "img")
+    monkeypatch.setattr(cm, "_remove_existing", lambda client, name: None)
+    monkeypatch.setattr(cm, "ssh_port_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(cm, "_run_with_fallbacks", capture)
+    with pytest.raises(_Stop):
+        cm.start_user_container("noport", "", "tok", "/jupyter/noport/")
+    assert seen.get("SSH_ENABLED") != "1"
+    assert seen["SSH_USER_NAME"] == "noport"
+    assert seen["SSH_USER_UID"] == str(cm.CONTAINER_UID)
+
+
+# ---------------------------------------------------------------------------
+# Several nodes: joining, heartbeats and the command channel
+# ---------------------------------------------------------------------------
+
+def _join_node(client, name, site="default"):
+    token = _login(client, "admin", ADMIN_PW)
+    res = client.post("/api/admin/nodes/join-tokens", headers=_auth(token), json={"site": site})
+    assert res.status_code == 201, res.text
+    join_token = res.json()["token"]
+    res = client.post("/api/nodes/join", json={
+        "token": join_token, "name": name,
+        "inventory": {"gpus": [{"index": 0, "uuid": "GPU-x", "name": "Fake", "total_memory_mb": 24564}]},
+        "data_url": f"http://{name}:8000"})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    return join_token, body["node_id"], {"Authorization": f"Node {body['node_id']}:{body['secret']}"}
+
+
+def test_the_master_is_a_node_of_its_own(client):
+    token = _login(client, "admin", ADMIN_PW)
+    rows = client.get("/api/admin/nodes", headers=_auth(token)).json()
+    local = [r for r in rows if r["is_local"]]
+    assert len(local) == 1 and local[0]["ready"], "a single machine is the one-node case"
+
+
+def test_a_join_token_admits_one_machine_once(client):
+    join_token, node_id, cred = _join_node(client, "node-a")
+    again = client.post("/api/nodes/join", json={"token": join_token, "name": "node-b"})
+    assert again.status_code == 403, "the token is spent"
+    assert client.post("/api/nodes/join", json={"token": "gpj_made-up", "name": "x"}).status_code == 403
+
+    assert client.post("/api/nodes/heartbeat", json={"gpus": []}).status_code == 401
+    bad = {"Authorization": f"Node {node_id}:not-the-secret"}
+    assert client.post("/api/nodes/heartbeat", headers=bad, json={"gpus": []}).status_code == 401
+    assert client.post("/api/nodes/heartbeat", headers=cred, json={"gpus": []}).status_code == 200
+
+    token = _login(client, "admin", ADMIN_PW)
+    row = next(r for r in client.get("/api/admin/nodes", headers=_auth(token)).json()
+               if r["id"] == node_id)
+    assert row["ready"] and row["inventory"]["gpus"][0]["total_memory_mb"] == 24564
+
+
+def test_a_node_that_stops_calling_gets_no_new_work(client, monkeypatch):
+    from config import settings as cfg
+    from services import nodes as node_service
+
+    _, node_id, cred = _join_node(client, "node-quiet")
+    client.post("/api/nodes/heartbeat", headers=cred, json={"gpus": []})
+    db = SessionLocal()
+    try:
+        node = db.query(models.Node).get(node_id)
+        assert node_service.is_ready(node)
+        monkeypatch.setattr(cfg, "NODE_STALE_SECONDS", -1)
+        assert not node_service.is_ready(node), "silent past NODE_STALE_SECONDS"
+        with pytest.raises(node_service.NodeError, match="unreachable"):
+            node_service.call(db, node_id, "ping", timeout=1)
+    finally:
+        db.close()
+
+
+def test_commands_go_to_the_node_and_answers_come_back(client):
+    """The master queues, the agent long-polls, runs, posts the result."""
+    import threading
+    from services import nodes as node_service
+
+    _, node_id, cred = _join_node(client, "node-cmd")
+    _, other_id, other_cred = _join_node(client, "node-other")
+    client.post("/api/nodes/heartbeat", headers=cred, json={"gpus": []})
+
+    out = {}
+
+    def master_side():
+        db = SessionLocal()
+        try:
+            out["value"] = node_service.call(db, node_id, "job_state", timeout=10, job_id=42)
+        except Exception as exc:  # noqa: BLE001
+            out["error"] = exc
+        finally:
+            db.close()
+
+    t = threading.Thread(target=master_side)
+    t.start()
+    cmds = []
+    for _ in range(20):
+        cmds = client.get("/api/nodes/commands?wait=1", headers=cred).json()["commands"]
+        if cmds:
+            break
+    assert cmds and cmds[0]["op"] == "job_state" and cmds[0]["args"] == {"job_id": 42}
+    # Nobody else gets the command, and nobody else may answer it.
+    assert client.get("/api/nodes/commands?wait=0", headers=other_cred).json()["commands"] == []
+    res = client.post("/api/nodes/results", headers=other_cred,
+                      json={"id": cmds[0]["id"], "ok": True, "value": "forged"})
+    assert res.json()["accepted"] is False
+    res = client.post("/api/nodes/results", headers=cred,
+                      json={"id": cmds[0]["id"], "ok": True, "value": {"running": True}})
+    assert res.json()["accepted"] is True
+    t.join(10)
+    assert out == {"value": {"running": True}}
+
+
+def test_a_drained_node_takes_nothing_new_and_a_busy_one_is_not_removed(client):
+    from services import nodes as node_service
+
+    _, node_id, cred = _join_node(client, "node-drain")
+    client.post("/api/nodes/heartbeat", headers=cred, json={"gpus": []})
+    token = _login(client, "admin", ADMIN_PW)
+    assert client.post(f"/api/admin/nodes/{node_id}/drain", headers=_auth(token)).json()["ready"] is False
+    db = SessionLocal()
+    try:
+        assert node_id not in [n.id for n in node_service.ready_nodes(db)]
+        alice_id = db.query(models.User).filter(models.User.username == "admin").first().id
+        job = models.Job(user_id=alice_id, username="admin", script="x.sh", workdir="",
+                         status=models.JobStatus.running, node_id=node_id)
+        db.add(job)
+        db.commit()
+        res = client.delete(f"/api/admin/nodes/{node_id}", headers=_auth(token))
+        assert res.status_code == 409
+        db.delete(job)
+        db.commit()
+    finally:
+        db.close()
+    assert client.delete(f"/api/admin/nodes/{node_id}", headers=_auth(token)).status_code == 200
+    assert client.post("/api/nodes/heartbeat", headers=cred, json={}).status_code == 401, \
+        "a removed node's credential is dead"
+
+
+def test_the_agent_joins_once_and_keeps_its_credential(client, tmp_path, monkeypatch):
+    from config import settings as cfg
+    from services import agent as agent_mod
+
+    token = _login(client, "admin", ADMIN_PW)
+    join_token = client.post("/api/admin/nodes/join-tokens", headers=_auth(token), json={}).json()["token"]
+    monkeypatch.setattr(cfg, "JOIN_TOKEN", join_token)
+    monkeypatch.setattr(cfg, "NODE_NAME", "node-agent")
+    monkeypatch.setattr(agent_mod, "inventory", lambda: {"gpus": []})
+    monkeypatch.setattr(agent_mod, "telemetry", lambda: {"gpus": [], "jobs": {}})
+
+    def via_testclient(self, method, path, body=None, timeout=30):
+        headers = {"Authorization": f"Node {self.node_id}:{self.secret}"} if self.secret else {}
+        res = client.request(method, path, json=body, headers=headers)
+        assert res.status_code == 200, res.text
+        return res.json()
+
+    monkeypatch.setattr(agent_mod.Agent, "_http", via_testclient)
+    cred_file = tmp_path / "node.json"
+    a = agent_mod.Agent(master_url="http://master", credential_file=str(cred_file))
+    a.ensure_joined()
+    assert oct(cred_file.stat().st_mode & 0o777) == "0o600"
+    assert a.heartbeat_once()["state"] == "ready"
+
+    again = agent_mod.Agent(master_url="http://master", credential_file=str(cred_file))
+    again.ensure_joined()          # the spent token is not needed again
+    assert again.node_id == a.node_id and again.heartbeat_once()["state"] == "ready"
+
+
+@pytest.fixture(autouse=True)
+def _no_node_outlives_its_test():
+    """A node is ready while its last heartbeat is fresh, and heartbeats live
+    in memory: without this a node joined by one test would still be offered
+    work in the next."""
+    yield
+    from services import nodes as node_service
+    node_service._reset_for_tests()
+
+
+def _card(free_mb, index=0):
+    return {"index": index, "uuid": None, "name": "test", "total_mb": 49140, "used_mb": 0,
+            "reserved_mb": 0, "entitled_mb": 0, "free_mb": free_mb, "running_jobs": 0}
+
+
+def test_a_job_goes_to_the_node_where_it_fits_most_tightly(client, monkeypatch):
+    from services import container_manager, jobs as job_service, nodes as node_service, quota
+
+    _, node_id, cred = _join_node(client, "node-wide")
+    client.post("/api/nodes/heartbeat", headers=cred, json={"gpus": []})
+    # The big job can only go to the wide node, leaving it 30000 - 22000 =
+    # 8000 free; the small one then fits more tightly on the master (6000)
+    # whichever of the two the queue takes first.
+    free = {None: 6000, node_id: 30000}
+    monkeypatch.setattr(job_service, "gpu_availability",
+                        lambda db, node=None: [_card(free[None if node is None or node.is_local else node.id])])
+    monkeypatch.setattr(job_service, "cpu_capacity", lambda db, node=None: {
+        "total_cores": 32, "committed_cores": 0, "free_cores": 32, "basis": "measured"})
+    monkeypatch.setattr(quota, "job_blocker", lambda db, user: None)
+    local_starts, remote_calls = [], []
+    monkeypatch.setattr(container_manager, "start_job_container",
+                        lambda job, user: local_starts.append(job.id) or {"container_id": "l" * 64})
+    real_call = node_service.call
+
+    def fake_call(db, nid, op, timeout=None, **args):
+        if nid is None:
+            return real_call(db, nid, op, timeout=timeout, **args)
+        remote_calls.append((nid, op, args))
+        return {"container_id": "r" * 64}
+    monkeypatch.setattr(node_service, "call", fake_call)
+
+    ids = {}
+    for name, mib in (("bigjob", 20000), ("smalljob", 5000)):
+        user_id, _ = _job_user(client, name)
+        db = SessionLocal()
+        try:
+            job = models.Job(user_id=user_id, username=name, script="job.sh", workdir="",
+                             gpu_count=1, gpu_memory_mb=mib, status=models.JobStatus.queued)
+            db.add(job)
+            db.commit()
+            ids[name] = job.id
+        finally:
+            db.close()
+
+    db = SessionLocal()
+    try:
+        job_service._dispatch_queued(db)
+        big = db.query(models.Job).get(ids["bigjob"])
+        small = db.query(models.Job).get(ids["smalljob"])
+        assert big.node_id == node_id, "20000 MiB fits only on the wider node"
+        assert small.node_id is None, "5000 MiB fits both, and the master's card is the tighter fit"
+        assert local_starts == [small.id]
+        (nid, op, args), = remote_calls
+        assert (nid, op) == (node_id, "start_job")
+        assert args["job"]["id"] == big.id and args["user"]["username"] == "bigjob"
+        for j in (big, small):
+            j.status = models.JobStatus.cancelled
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_work_stays_on_the_nodes_of_its_owners_site(client, monkeypatch):
+    from services import container_manager, jobs as job_service, nodes as node_service, quota
+
+    token = _login(client, "admin", ADMIN_PW)
+    site_token = client.post("/api/admin/nodes/join-tokens", headers=_auth(token),
+                             json={"site": "lab2"}).json()["token"]
+    res = client.post("/api/nodes/join", json={"token": site_token, "name": "node-lab2", "inventory": {}})
+    lab2_id = res.json()["node_id"]
+    cred = {"Authorization": f"Node {lab2_id}:{res.json()['secret']}"}
+    client.post("/api/nodes/heartbeat", headers=cred, json={"gpus": []})
+
+    monkeypatch.setattr(job_service, "gpu_availability", lambda db, node=None: [_card(40000)])
+    monkeypatch.setattr(job_service, "cpu_capacity", lambda db, node=None: {
+        "total_cores": 32, "committed_cores": 0, "free_cores": 32, "basis": "measured"})
+    monkeypatch.setattr(quota, "job_blocker", lambda db, user: None)
+    monkeypatch.setattr(container_manager, "start_job_container",
+                        lambda job, user: {"container_id": "l" * 64})
+    monkeypatch.setattr(node_service, "call",
+                        lambda db, nid, op, timeout=None, **a: {"container_id": "r" * 64})
+
+    user_id, _ = _job_user(client, "remoteuser")
+    db = SessionLocal()
+    try:
+        db.query(models.User).get(user_id).site = "lab2"
+        job = models.Job(user_id=user_id, username="remoteuser", script="job.sh", workdir="",
+                         gpu_count=1, gpu_memory_mb=1000, status=models.JobStatus.queued)
+        db.add(job)
+        db.commit()
+        job_service._dispatch_queued(db)
+        db.refresh(job)
+        assert job.node_id == lab2_id, "the master is in site 'default', the home is in lab2"
+
+        # With lab2's only node drained, the job waits, and says why.
+        job2 = models.Job(user_id=user_id, username="remoteuser", script="job.sh", workdir="",
+                          gpu_count=1, gpu_memory_mb=1000, status=models.JobStatus.queued)
+        db.add(job2)
+        db.query(models.Node).get(lab2_id).state = "draining"
+        db.commit()
+        job_service._dispatch_queued(db)
+        db.refresh(job2)
+        assert job2.status == models.JobStatus.queued
+        assert "no node of your site" in job_service.queued_blockers(db)[job2.id]
+        for j in (job, job2):
+            j.status = models.JobStatus.cancelled
+        db.query(models.User).get(user_id).site = None
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_a_job_on_another_node_is_held_to_its_reservation_too(client, monkeypatch):
+    """Its VRAM comes from the node's heartbeat, and the stop goes to the node."""
+    from services import jobs as job_service, nodes as node_service
+
+    _, node_id, cred = _join_node(client, "node-guard")
+    user_id, _ = _job_user(client, "guarded")
+    db = SessionLocal()
+    try:
+        job = models.Job(user_id=user_id, username="guarded", script="job.sh", workdir="",
+                         gpu_count=1, gpu_memory_mb=10000, gpu_indices="0", node_id=node_id,
+                         status=models.JobStatus.running, started_at=datetime.utcnow())
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    finally:
+        db.close()
+
+    calls = []
+    monkeypatch.setattr(node_service, "call",
+                        lambda db, nid, op, timeout=None, **a: calls.append((nid, op, a)))
+    client.post("/api/nodes/heartbeat", headers=cred,
+                json={"gpus": [], "jobs": {str(job_id): {"vram_mb": 10500}}})
+    assert job_service.gpu_guard_pass()["stopped"] == [], "inside its allowance"
+    client.post("/api/nodes/heartbeat", headers=cred,
+                json={"gpus": [], "jobs": {str(job_id): {"vram_mb": 30000}}})
+    assert job_service.gpu_guard_pass()["stopped"] == [job_id]
+    assert [(n, op) for n, op, _ in calls] == [(node_id, "stop_job"), (node_id, "remove_job")]
+    db = SessionLocal()
+    try:
+        assert db.query(models.Job).get(job_id).status == models.JobStatus.failed
+    finally:
+        db.close()
+
+
+def test_memory_held_outside_the_queue_adds_to_the_allowances(client, monkeypatch):
+    """Found on two nodes: a card with 8 GiB held by a program outside the
+    platform took three 10 GiB jobs in the first pass, and a fourth in the
+    next, because the second pass took max(used, entitled) and the 8 GiB
+    disappeared behind the allowances."""
+    from config import settings
+    from services import jobs as job_service
+
+    _, node_id, cred = _join_node(client, "node-outside")
+    user_id, _ = _job_user(client, "packed")
+    ids = []
+    db = SessionLocal()
+    try:
+        for _ in range(3):
+            job = models.Job(user_id=user_id, username="packed", script="job.sh", workdir="",
+                             gpu_count=1, gpu_memory_mb=10240, gpu_indices="0",
+                             node_id=node_id, status=models.JobStatus.running,
+                             started_at=datetime.utcnow())
+            db.add(job)
+            db.commit()
+            ids.append(job.id)
+    finally:
+        db.close()
+    # The jobs hold 100 MiB each; something else holds 8115 MiB.
+    client.post("/api/nodes/heartbeat", headers=cred, json={
+        "gpus": [{"index": 0, "uuid": "GPU-x", "name": "test", "total_memory_mb": 49140,
+                  "used_memory_mb": 8415, "free_memory_mb": 40725}],
+        "jobs": {str(i): {"vram_mb": 100} for i in ids}})
+    db = SessionLocal()
+    try:
+        node = db.query(models.Node).get(node_id)
+        card = job_service.gpu_availability(db, node)[0]
+    finally:
+        db.close()
+    assert card["entitled_mb"] == 3 * 11264
+    assert card["outside_mb"] == 8115
+    assert card["free_mb"] == 49140 - 3 * 11264 - 8115 - settings.JOB_GPU_HEADROOM_MB
+    assert card["free_mb"] < 11264, "a fourth 10 GiB job must not fit"
+
+
+def test_a_command_lost_with_a_restarted_agent_fails_at_once(client):
+    """The agent stops while its long poll is parked on the master.  That
+    poll takes the next command and hands it to a dead connection; the caller
+    used to wait the whole command timeout, and with it the scheduler pass."""
+    import threading
+    import time
+    from services import nodes as node_service
+
+    _, node_id, cred = _join_node(client, "node-reboot")
+    client.post("/api/nodes/heartbeat", headers=cred, json={"gpus": [], "jobs": {}})
+
+    got = {}
+    old_poll = threading.Thread(target=lambda: got.update(
+        old=node_service.take_commands(node_id, 5, "first-run")))
+    old_poll.start()
+    db = SessionLocal()
+    outcome = {}
+
+    def caller():
+        try:
+            node_service.call(db, node_id, "job_state", timeout=30, job_id=1)
+        except node_service.NodeError as exc:
+            outcome["error"] = str(exc)
+    started = time.time()
+    t = threading.Thread(target=caller)
+    t.start()
+    old_poll.join()
+    assert [c["op"] for c in got["old"]] == ["job_state"]    # handed to the dead run
+
+    # The agent comes back with a new boot id: the lost command fails now.
+    assert node_service.take_commands(node_id, 0, "second-run") == []
+    t.join(5)
+    db.close()
+    assert "restarted" in outcome.get("error", ""), outcome
+    assert time.time() - started < 10
+    # A poll still parked from the first run gets nothing more.
+    assert node_service.take_commands(node_id, 0, "first-run") == []
+
+
+def test_every_job_action_the_master_sends_is_one_a_node_knows():
+    """A name the node does not know comes back as an error, and for the state
+    query that reads as "node unreachable": the job would sit as running for
+    ever.  (It did, on the first run across two nodes.)"""
+    from services import jobs as job_service, node_ops
+
+    for local_fn, node_op in job_service._CONTAINER_OPS.values():
+        assert node_op in node_ops.OPS, node_op
+        assert callable(getattr(container_manager, local_fn))
+    assert "start_job" in node_ops.OPS
+
+
+# ---------------------------------------------------------------------------
+# Workspaces on another node
+# ---------------------------------------------------------------------------
+
+def _join_with_key(client, name):
+    token = _login(client, "admin", ADMIN_PW)
+    join_token = client.post("/api/admin/nodes/join-tokens", headers=_auth(token),
+                             json={}).json()["token"]
+    body = client.post("/api/nodes/join", json={
+        "token": join_token, "name": name, "data_url": f"http://{name}:8000/",
+        "inventory": {"gpus": [{"index": 0, "name": "Fake", "total_memory_mb": 24564}]},
+    }).json()
+    cred = {"Authorization": f"Node {body['node_id']}:{body['secret']}"}
+    client.post("/api/nodes/heartbeat", headers=cred, json={"gpus": [
+        {"index": 0, "name": "Fake", "total_memory_mb": 24564, "used_memory_mb": 0}]})
+    return body, cred
+
+
+def test_a_signed_proxy_header_is_good_for_one_user_and_one_minute(monkeypatch):
+    import time as _time
+    from services import crypto, nodes as node_service
+
+    node = models.Node(name="n", proxy_key=crypto.encrypt("k" * 40))
+    header = node_service.proxy_header(node, "alice")[node_service.PROXY_HEADER]
+    assert node_service.proxy_allowed("k" * 40, header, "alice")
+    assert not node_service.proxy_allowed("k" * 40, header, "bob")
+    assert not node_service.proxy_allowed("another-key", header, "alice")
+    assert not node_service.proxy_allowed("k" * 40, None, "alice")
+    later = _time.time() + 120
+    monkeypatch.setattr(node_service.time, "time", lambda: later)
+    assert not node_service.proxy_allowed("k" * 40, header, "alice"), "too old"
+
+
+def test_a_workspace_runs_on_the_node_its_gpus_are_on(client, monkeypatch):
+    from services import nodes as node_service
+
+    body, _ = _join_with_key(client, "node-ws")
+    node_id = body["node_id"]
+    admin = _login(client, "admin", ADMIN_PW)
+    user_id, token = _new_account(client, "wsfar", "Wsfar-pass12")
+
+    res = client.post("/api/admin/gpu/assignments", headers=_auth(admin), json={
+        "user_id": user_id, "gpu_indices": [3], "node_id": node_id})
+    assert res.status_code == 400 and "node-ws" in res.text, "indices are the node's"
+    res = client.post("/api/admin/gpu/assignments", headers=_auth(admin), json={
+        "user_id": user_id, "gpu_indices": [0], "node_id": node_id})
+    assert res.status_code == 201 and res.json()["node_id"] == node_id, res.text
+
+    for name, fn in _REAL_BACKEND.items():
+        monkeypatch.setattr(session_backend, name, fn)
+    ops = []
+
+    def fake_call(db, nid, op, timeout=None, **args):
+        assert nid == node_id
+        ops.append(op)
+        return {
+            "image_exists": True,
+            "start_workspace": {"container_id": "c" * 64, "image": "gpu-jupyter:latest",
+                                "port": 8888, "ssh_port": 2301, "ssh_password": None},
+            "workspace_ready": True,
+            "workspace_state": {"running": True},
+            "stop_workspace": True,
+        }[op]
+
+    monkeypatch.setattr(node_service, "call", fake_call)
+    res = client.post("/api/user/me/jupyter/start", headers=_auth(token), json={})
+    assert res.status_code == 200, res.text
+    assert ops == ["image_exists", "start_workspace", "workspace_ready"]
+    db = SessionLocal()
+    try:
+        row = db.query(models.JupyterSession).filter(models.JupyterSession.user_id == user_id).one()
+        assert row.node_id == node_id
+    finally:
+        db.close()
+
+    assert client.get("/api/user/me/jupyter/status", headers=_auth(token)).json()["status"] == "running"
+    assert ops[-1] == "workspace_state"
+
+    base, headers = session_backend.target("wsfar")
+    assert base == "http://node-ws:8000/_node"
+    sig = headers[node_service.PROXY_HEADER]
+    assert node_service.proxy_allowed(body["proxy_key"], sig, "wsfar")
+    assert not node_service.proxy_allowed(body["proxy_key"], sig, "admin")
+    assert session_backend.ssh_host("wsfar") == "node-ws"
+
+    client.post("/api/user/me/jupyter/stop", headers=_auth(token))
+    assert ops[-1] == "stop_workspace"
+
+
+def test_no_workspace_starts_on_a_node_that_is_away(client, monkeypatch):
+    from config import settings as cfg
+    from services import nodes as node_service
+
+    body, _ = _join_with_key(client, "node-away")
+    admin = _login(client, "admin", ADMIN_PW)
+    user_id, token = _new_account(client, "awayuser", "Away-pass12")
+    client.post("/api/admin/gpu/assignments", headers=_auth(admin), json={
+        "user_id": user_id, "gpu_indices": [0], "node_id": body["node_id"]})
+
+    for name, fn in _REAL_BACKEND.items():
+        monkeypatch.setattr(session_backend, name, fn)
+    monkeypatch.setattr(node_service, "call", lambda *a, **kw: pytest.fail("nothing is sent"))
+    monkeypatch.setattr(cfg, "NODE_STALE_SECONDS", -1)
+    res = client.post("/api/user/me/jupyter/start", headers=_auth(token), json={})
+    assert res.status_code == 503 and "node-away" in res.text
+
+
+def test_the_data_port_forwards_only_what_the_master_signed(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from fastapi.responses import Response
+    from routers import node_data
+    from services import agent as agent_mod, crypto, nodes as node_service
+
+    monkeypatch.setattr(agent_mod, "current", lambda: type("A", (), {"proxy_key": "k" * 40})())
+    monkeypatch.setattr(container_manager, "container_hostname", lambda u: f"ws-{u}")
+    seen = []
+
+    async def fake_forward(request, target, headers, params, internal_hosts=()):
+        seen.append((target, {k.lower() for k in headers}))
+        return Response(status_code=200, content=b"ok")
+
+    monkeypatch.setattr(proxy, "forward_http", fake_forward)
+    app = FastAPI()
+    app.include_router(node_data.router)
+    port = TestClient(app)
+
+    assert port.get("/_node/jupyter/alice/lab").status_code == 403
+    node = models.Node(name="n", proxy_key=crypto.encrypt("k" * 40))
+    good = node_service.proxy_header(node, "alice")
+    assert port.get("/_node/jupyter/bob/lab", headers=good).status_code == 403
+    res = port.get("/_node/jupyter/alice/lab", headers=good)
+    assert res.status_code == 200
+    target, sent = seen[-1]
+    assert target == "http://ws-alice:8888/jupyter/alice/lab"
+    assert node_service.PROXY_HEADER.lower() not in sent, "the signature stays on the node"
+
+
+
+# ---------------------------------------------------------------------------
+# Sign-in through an OpenID Connect provider
+# ---------------------------------------------------------------------------
+
+OIDC_CONF = {
+    "issuer": "https://accounts.example",
+    "authorization_endpoint": "https://accounts.example/auth",
+    "token_endpoint": "https://accounts.example/token",
+}
+
+
+@pytest.fixture
+def oidc_provider(monkeypatch):
+    """A provider that signs in whoever the test says, with the nonce it was given."""
+    from urllib.parse import parse_qs, urlparse
+
+    from jose import jwt as jose_jwt
+
+    from config import settings
+    from services import oidc
+
+    monkeypatch.setattr(settings, "OIDC_CLIENT_ID", "client-1")
+    monkeypatch.setattr(settings, "OIDC_CLIENT_SECRET", "secret-1")
+    monkeypatch.setattr(settings, "OIDC_REDIRECT_URL", "http://testserver/api/auth/oidc/callback")
+    monkeypatch.setattr(settings, "OIDC_ALLOWED_DOMAINS", "")
+
+    async def discovery():
+        return OIDC_CONF
+
+    monkeypatch.setattr(oidc, "discovery", discovery)
+    who = {"email": None, "verified": True, "nonce": None, "aud": "client-1", "posted": None}
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"id_token": jose_jwt.encode({
+                "iss": OIDC_CONF["issuer"], "aud": who["aud"], "exp": int(time.time()) + 300,
+                "nonce": who["nonce"], "email": who["email"], "email_verified": who["verified"],
+            }, "provider-key", algorithm="HS256")}
+
+    class FakeClient:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, data=None):
+            who["posted"] = data
+            return FakeResponse()
+
+    monkeypatch.setattr(oidc.httpx, "AsyncClient", FakeClient)
+
+    def sign_in(email, nonce=None, state=None):
+        client = who["client"]
+        start = client.get("/api/auth/oidc/login", follow_redirects=False)
+        assert start.status_code == 302
+        query = parse_qs(urlparse(start.headers["location"]).query)
+        who.update(email=email, nonce=nonce or query["nonce"][0])
+        return client.get("/api/auth/oidc/callback", follow_redirects=False,
+                          params={"code": "c", "state": state or query["state"][0]})
+
+    who["sign_in"] = sign_in
+    return who
+
+
+def _handoff(res):
+    location = res.headers["location"]
+    assert location.startswith("/login#oidc="), location
+    return location.split("#oidc=", 1)[1]
+
+
+def test_oidc_is_off_until_configured(client):
+    assert client.get("/api/auth/oidc/config").json()["enabled"] is False
+    assert client.get("/api/auth/oidc/login", follow_redirects=False).status_code == 404
+
+
+def test_oidc_signs_in_the_account_with_that_email(client, oidc_provider):
+    oidc_provider["client"] = client
+    token = _login(client, "admin", ADMIN_PW)
+    _make_user(client, token, "ssouser", email="SSO.User@Example.org")
+
+    assert client.get("/api/auth/oidc/config").json() == {"enabled": True, "label": "Google"}
+    res = oidc_provider["sign_in"]("sso.user@example.org")
+    # The code was traded with PKCE, not bare.
+    assert oidc_provider["posted"]["code_verifier"]
+    session = client.post("/api/auth/oidc/exchange", json={"token": _handoff(res)})
+    assert session.status_code == 200, session.text
+    assert session.json()["user"]["username"] == "ssouser"
+    me = client.get("/api/auth/me", headers=_auth(session.json()["access_token"]))
+    assert me.json()["username"] == "ssouser"
+
+
+def test_oidc_hand_off_is_single_use_and_not_a_session(client, oidc_provider):
+    oidc_provider["client"] = client
+    token = _login(client, "admin", ADMIN_PW)
+    _make_user(client, token, "ssoonce", email="once@example.org")
+
+    handoff = _handoff(oidc_provider["sign_in"]("once@example.org"))
+    assert client.get("/api/auth/me", headers=_auth(handoff)).status_code == 401
+    assert client.post("/api/auth/oidc/exchange", json={"token": handoff}).status_code == 200
+    assert client.post("/api/auth/oidc/exchange", json={"token": handoff}).status_code == 401
+
+
+def test_oidc_refuses_what_it_cannot_tie_to_an_account(client, oidc_provider):
+    oidc_provider["client"] = client
+    token = _login(client, "admin", ADMIN_PW)
+    _make_user(client, token, "ssoguard", email="guard@example.org")
+
+    def refused(res):
+        assert res.status_code == 302
+        assert res.headers["location"].startswith("/login?oidc_error="), res.headers["location"]
+
+    refused(oidc_provider["sign_in"]("nobody@example.org"))             # no such account
+    refused(oidc_provider["sign_in"]("guard@example.org", nonce="x"))  # replayed token
+    refused(oidc_provider["sign_in"]("guard@example.org", state="x"))  # forged callback
+    oidc_provider["verified"] = False
+    refused(oidc_provider["sign_in"]("guard@example.org"))             # unverified email
+    oidc_provider["verified"] = True
+    oidc_provider["aud"] = "someone-else"
+    refused(oidc_provider["sign_in"]("guard@example.org"))             # token for another app
+    oidc_provider["aud"] = "client-1"
+
+    from config import settings
+    settings.OIDC_ALLOWED_DOMAINS = "example.edu"
+    try:
+        refused(oidc_provider["sign_in"]("guard@example.org"))
+    finally:
+        settings.OIDC_ALLOWED_DOMAINS = ""

@@ -12,14 +12,13 @@
 
 ## Overview
 
-GPU Platform is a self-hosted web application for sharing one machine's NVIDIA
-GPUs, CPU, RAM and disk between several people. An administrator hands out the
-resources; each user gets a JupyterLab session of their own, with SSH into the
-same place, and can only see what they were given.
+GPU Platform is a self-hosted web application for sharing the NVIDIA GPUs, CPU,
+RAM and disk of one or a few machines between several people. An administrator
+hands out the resources; each user gets a JupyterLab session of their own, with
+SSH into the same place, and can only see what they were given.
 
-It was written for the situation most research groups are actually in: one
-workstation with a couple of cards in it, a handful of people who need them,
-and nobody whose job is to run a cluster.
+It is meant for research groups and teaching labs with one or a few GPU
+workstations and no cluster administrator.
 
 | Feature | Description |
 |---|---|
@@ -31,6 +30,10 @@ and nobody whose job is to run a cluster.
 | Quotas | Per-user disk budget, plus weekly GPU-hour and CPU-hour budgets on batch jobs, applied at submission and again while a job runs |
 | Usage accounting | Durable ledger of every session: GPU-hours, peak RAM, why it ended |
 | Audit trail | Every privileged action recorded with actor, target and IP |
+| Batch queue | Fair-share queue; several jobs share a GPU, each held to the memory it reserved |
+| Hard GPU memory limit | Optional: an allocation past a job's reservation fails (HAMi-core) |
+| Several machines | Further machines join with a one-time token ([docs/multi-node.md](docs/multi-node.md)) |
+| Google sign-in | Optional sign-in through Google or another OpenID Connect provider |
 | Idle reclamation | Optional automatic stop of sessions nobody is using |
 | Flexible fronting | Runs behind your existing nginx/Caddy, or brings its own |
 
@@ -353,6 +356,20 @@ CPU-hours** a week each.
 | `SSH_PASSWORD_AUTH` | `false` | Accept password auth over SSH. Key-only by default; installs that predate 1.2.0 have `true` written to `.env` so existing users keep working |
 | `SSH_ENABLED` | `true` | Per-user sshd inside user containers |
 | `SSH_PORT_START` / `SSH_PORT_END` | `2222` / `2321` | Host port pool for user SSH |
+
+### Sign-in with Google (OpenID Connect)
+
+Off while `OIDC_CLIENT_ID` is empty. It signs in existing accounts only: the
+provider's verified email must equal the account's email. Passwords keep
+working. Setup: [administrator guide](docs/admin-guide.md#signing-in-with-google).
+
+| Variable | Default | Description |
+|---|---|---|
+| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | *(empty)* | The OAuth client from the provider |
+| `OIDC_REDIRECT_URL` | *(empty)* | `https://<your host>/api/auth/oidc/callback`, registered with the provider |
+| `OIDC_ISSUER` | `https://accounts.google.com` | Another provider's issuer URL |
+| `OIDC_LABEL` | `Google` | Name on the login button |
+| `OIDC_ALLOWED_DOMAINS` | *(empty)* | Comma-separated email domains allowed; empty allows any |
 
 ---
 
@@ -988,7 +1005,8 @@ word. The platform does instead: every `GPU_GUARD_INTERVAL` seconds, one second
 by default, it reads what each job holds and stops any job past its allowance,
 telling it what it really used.
 
-This is sampling, not prevention. Nothing stops the allocation itself, so a job
+This is sampling, not prevention. Unless the hard limit below is on, nothing
+stops the allocation itself, so a job
 is only seen once the driver has handed the memory over, and frameworks take
 memory in large blocks: a single allocation can carry a job from under its
 allowance to well past it. Sampling faster does not close that gap; the residual
@@ -1027,6 +1045,23 @@ every job, so the cost does not grow with the queue. If the backend is not in
 the host PID namespace the driver hides those processes; the guard then reports
 that it cannot measure and stands down, rather than reading an empty list as
 "every job holds nothing".
+
+### Hard limit at the allocation (optional)
+
+With `GPU_HARD_VRAM_LIMIT=true` an allocation past a job's allowance fails with
+an ordinary CUDA out-of-memory error, which the job can catch, instead of being
+granted and then stopped.
+
+* `deploy.sh` builds HAMi-core for the installed driver and uses the build only
+  after it has refused an allocation past a test limit on one of the GPUs.
+* Each job container gets the library read-only, loaded through
+  `/etc/ld.so.preload`, and its limit in a file that overrides the
+  environment. Unsetting `LD_PRELOAD` or setting a limit variable changes
+  nothing.
+* It is not a security boundary: a statically linked program or one that calls
+  the driver directly is not intercepted. The measurement above stays on.
+* Images need glibc 2.34 or later.
+* `python3 scripts/hami/verify.py` checks a build by hand.
 
 ### Reading a job's output safely
 
@@ -1103,6 +1138,27 @@ against the owner's weekly GPU-hour and CPU-hour budgets.
 
 Admins see the whole queue under **Admin → Job Queue**, with what each job asked
 for, where it landed, and a cancel button for reclaiming a card.
+
+---
+
+## Several machines
+
+Further machines join an installation and run jobs and workspaces placed on
+them by the master. On the master, **Admin → Nodes → Add a node** prints a
+one-time command; on the new machine, in a checkout of the same version:
+
+```bash
+sudo ./deploy.sh --join https://gpu.example.org <token> --nfs master:/srv/gpu/jupyter_data
+```
+
+* A node opens every connection itself: no SSH access and no inbound control
+  port are needed.
+* Home directories are shared over NFS, so a user's files are the same on
+  every machine.
+* The master holds all state. While it is down, containers on the nodes keep
+  running, but nothing new is scheduled.
+
+Details: [docs/multi-node.md](docs/multi-node.md).
 
 ---
 
@@ -1370,7 +1426,8 @@ If the platform is useful in work you publish, please cite it using
 [`CITATION.cff`](CITATION.cff) (GitHub's *Cite this repository* button reads
 it). Every release is archived on Zenodo: [10.5281/zenodo.23570943](https://doi.org/10.5281/zenodo.23570943)
 always resolves to the latest one, and each release also has a DOI of its own
-(v1.1.0: [10.5281/zenodo.23570944](https://doi.org/10.5281/zenodo.23570944)).
+(v1.2.0: [10.5281/zenodo.23607043](https://doi.org/10.5281/zenodo.23607043);
+v1.1.0: [10.5281/zenodo.23570944](https://doi.org/10.5281/zenodo.23570944)).
 
 The public history of this repository starts on 29 September 2026. The
 platform was developed and first deployed (from 18 September 2026) in a
@@ -1502,14 +1559,16 @@ created through the Docker API, not compose). Stop them from
 
 ## Limitations
 
-* **One host.** The platform manages the GPUs, cores and memory of the machine
-  it runs on; it does not schedule across nodes. Groups with several machines
-  are better served by a cluster workload manager such as Slurm.
-* **No GPU fractioning.** There is no MIG or MPS support, so GPUs are handed
-  out whole and a VRAM reservation is enforced by measurement, after the fact.
+* **A few machines, not a cluster.** One master holds all state; there is no
+  failover for it, no job spanning machines, and no reservation that holds
+  room for a large job while smaller ones keep starting. Larger installations
+  are better served by Slurm or Kubernetes.
+* **No MIG or MPS.** GPU memory is shared by reservation and compute is
+  time-sliced. The hard memory limit covers only programs HAMi-core
+  intercepts; otherwise a reservation is enforced by measurement.
 * **No reservation calendar** for the case where every GPU is taken.
 * **Disk quota** is measured, not imposed by the filesystem: it is checked at
   session start and on the reaper interval, so a running session can go over it
   in between.
-* **SQLite and a single worker.** Fine for one host; move `DATABASE_URL` to
+* **SQLite and a single worker.** Fine for a few machines; move `DATABASE_URL` to
   PostgreSQL for more users.

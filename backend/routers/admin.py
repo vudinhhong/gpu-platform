@@ -1,5 +1,6 @@
 """Admin-only endpoints: users, GPU assignments, sessions, usage and audit."""
 
+import json
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -404,7 +405,31 @@ def _host_gpus() -> List[Dict[str, Any]]:
     return gpu_monitor.get_gpu_status(detailed=True)
 
 
-def _validate_gpu_indices(indices: List[int]) -> None:
+def _assignment_node(db, node_id: Optional[int]):
+    """The node an assignment names, or None for the master."""
+    if node_id is None:
+        return None
+    node = db.query(models.Node).filter(models.Node.id == node_id).first()
+    if node is None or node.state == "removed":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No such node.")
+    return None if node.is_local else node
+
+
+def _node_gpu_indices(node) -> set:
+    """GPU indices another node offers, from its heartbeat or else its join."""
+    from services import nodes
+
+    t = nodes.telemetry(node.id)
+    gpus = (t or {}).get("gpus")
+    if gpus is None:
+        try:
+            gpus = json.loads(node.inventory or "{}").get("gpus") or []
+        except ValueError:
+            gpus = []
+    return {g.get("index") for g in gpus if g.get("index") is not None}
+
+
+def _validate_gpu_indices(indices: List[int], node=None) -> None:
     """Ensure the requested indices are well-formed and exist on the host.
 
     An empty list is valid and means "no GPU": an assignment can exist purely
@@ -419,7 +444,7 @@ def _validate_gpu_indices(indices: List[int]) -> None:
     if len(set(indices)) != len(indices):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Duplicate GPU indices")
 
-    known = {g["index"] for g in _host_gpus()}
+    known = _node_gpu_indices(node) if node is not None else {g["index"] for g in _host_gpus()}
     if not known:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -435,7 +460,9 @@ def _validate_gpu_indices(indices: List[int]) -> None:
     if unknown:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"GPU(s) {unknown} do not exist on this host (available: {sorted(known)}).",
+            detail=(f"GPU(s) {unknown} do not exist on "
+                    f"{'node ' + node.name if node is not None else 'this host'} "
+                    f"(available: {sorted(known)})."),
         )
 
 
@@ -451,6 +478,24 @@ def _require_a_limit(gpu_indices, memory_limit_mb, cpu_cores,
                 "CPU cores, process limit."
             ),
         )
+
+
+def _validated_gpu_memory_limit(value) -> Optional[int]:
+    """A per-card VRAM ceiling, or None for the whole card.
+
+    Below about a gigabyte a CUDA context alone does not fit (see
+    JOB_GPU_OVERRUN_GRACE_MB in config.py), so such a figure would make every
+    GPU program in the workspace fail at start-up with out-of-memory.
+    """
+    if not value:
+        return None
+    if value < 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The GPU memory limit must be at least 1024 MiB: a CUDA context "
+                   "alone takes several hundred.",
+        )
+    return int(value)
 
 
 def _validate_max_processes(value) -> None:
@@ -517,7 +562,8 @@ async def create_assignment(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    _validate_gpu_indices(payload.gpu_indices)
+    node = _assignment_node(db, payload.node_id)
+    _validate_gpu_indices(payload.gpu_indices, node)
     _validate_max_processes(payload.max_processes)
     _require_a_limit(
         payload.gpu_indices, payload.memory_limit_mb,
@@ -542,11 +588,14 @@ async def create_assignment(
         cpu_cores=payload.cpu_cores,
         cpu_limit_seconds=payload.cpu_limit_seconds,
         max_processes=payload.max_processes,
+        gpu_memory_limit_mb=_validated_gpu_memory_limit(payload.gpu_memory_limit_mb),
+        node_id=node.id if node is not None else None,
     )
     db.add(assignment)
     audit.record(
         db, "gpu.assign", actor=admin.username, target=user.username,
-        detail=f"gpus={sorted(payload.gpu_indices)}",
+        detail=f"gpus={sorted(payload.gpu_indices)}"
+               + (f" node={node.name}" if node is not None else ""),
         ip_address=audit.client_ip(request), commit=False,
     )
     db.commit()
@@ -573,9 +622,17 @@ async def update_assignment(
     # the limit.  Keying on `is not None` meant a limit could be raised but
     # never removed.
     sent = payload.model_fields_set
-    if "gpu_indices" in sent:
-        indices = payload.gpu_indices or []
-        _validate_gpu_indices(indices)
+    # A workspace runs where its GPUs are, so moving it to another node checks
+    # the indices against that node, whether or not they were sent again.
+    if "node_id" in sent:
+        node = _assignment_node(db, payload.node_id)
+        assignment.node_id = node.id if node is not None else None
+    else:
+        node = _assignment_node(db, assignment.node_id)
+    if "gpu_indices" in sent or "node_id" in sent:
+        indices = (payload.gpu_indices or []) if "gpu_indices" in sent else [
+            int(i) for i in (assignment.gpu_indices or "").split(",") if i.strip().isdigit()]
+        _validate_gpu_indices(indices, node)
         assignment.gpu_indices = ",".join(str(i) for i in sorted(indices))
     if "memory_limit_mb" in sent:
         assignment.memory_limit_mb = payload.memory_limit_mb or None
@@ -586,6 +643,8 @@ async def update_assignment(
     if "max_processes" in sent:
         _validate_max_processes(payload.max_processes or None)
         assignment.max_processes = payload.max_processes or None
+    if "gpu_memory_limit_mb" in sent:
+        assignment.gpu_memory_limit_mb = _validated_gpu_memory_limit(payload.gpu_memory_limit_mb)
 
     _require_a_limit(
         assignment.gpu_indices, assignment.memory_limit_mb,

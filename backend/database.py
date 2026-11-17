@@ -6,11 +6,24 @@ from config import settings
 # Build engine; SQLite needs check_same_thread=False for multi-threaded use
 _connect_args = {}
 if settings.DATABASE_URL.startswith("sqlite"):
-    _connect_args = {"check_same_thread": False}
+    # One writer at a time; the others wait up to `timeout` seconds for the
+    # lock.  The default of 5 turned a burst of workspace starts into errors.
+    _connect_args = {"check_same_thread": False, "timeout": 30}
+
+_pool_args = {}
+if settings.DATABASE_URL.startswith("sqlite"):
+    # A request holds its connection for as long as it runs, and starting a
+    # workspace opens a second one inside.  With SQLAlchemy's default of
+    # 5 + 10, sixteen accounts starting at once used them all up: every
+    # request then waited 30 s for one, and the scheduler and GPU guard
+    # loops failed outright.  A SQLite connection is only a file handle, so
+    # the pool is sized above FastAPI's 40 worker threads.
+    _pool_args = {"pool_size": 20, "max_overflow": 80}
 
 engine = create_engine(
     settings.DATABASE_URL,
     connect_args=_connect_args,
+    **_pool_args,
     # Echo SQL to stdout – set to False in production
     echo=False,
 )

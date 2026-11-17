@@ -1,0 +1,8 @@
+[
+ {"id": "e1b-monitor", "gpus": [0], "min_free_mib": 30000, "timeout_min": 180, "max_attempts": 40,
+  "cmd": ["python3", "-u", "scripts/experiments/e1b_growth.py", "--modes", "monitor"],
+  "cleanup": ["bash", "scripts/experiments/dev_cleanup.sh"]},
+ {"id": "e1b-hami", "gpus": [0], "min_free_mib": 30000, "timeout_min": 180, "max_attempts": 40,
+  "cmd": ["python3", "-u", "scripts/experiments/e1b_growth.py", "--modes", "hami"],
+  "cleanup": ["bash", "scripts/experiments/dev_cleanup.sh"]}
+]

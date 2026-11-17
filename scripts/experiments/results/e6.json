@@ -1,0 +1,207 @@
+{
+ "platform": {
+  "stack": "platform",
+  "outcome": "ok",
+  "machine": {
+   "os": "Ubuntu 24.04.5 LTS",
+   "kernel": "6.11.0-29-generic",
+   "cpu": "Intel(R) Core(TM) i9-14900K",
+   "cores": 32,
+   "memory_mib": 64059,
+   "gpus": 0,
+   "gpu_names": "",
+   "driver": "",
+   "cgroup": "cgroup2fs"
+  },
+  "steps": [
+   {
+    "step": "apt-base",
+    "kind": "prerequisite",
+    "seconds": 4.8,
+    "rc": 0,
+    "downloaded_mib": 46
+   },
+   {
+    "step": "docker",
+    "kind": "prerequisite",
+    "seconds": 18.0,
+    "rc": 0,
+    "downloaded_mib": 124
+   },
+   {
+    "step": "nvidia-container-toolkit",
+    "kind": "prerequisite",
+    "seconds": 0.0,
+    "rc": 0,
+    "downloaded_mib": 0
+   },
+   {
+    "step": "get-source",
+    "kind": "install",
+    "seconds": 0.1,
+    "rc": 0,
+    "downloaded_mib": 0
+   },
+   {
+    "step": "deploy",
+    "kind": "install",
+    "seconds": 349.0,
+    "rc": 0,
+    "downloaded_mib": 569
+   },
+   {
+    "step": "first-user-notebook-job",
+    "kind": "verify",
+    "seconds": 21.1,
+    "rc": 0,
+    "downloaded_mib": 0
+   }
+  ],
+  "total_seconds": 393.1,
+  "steps_by_kind": {
+   "install": 2,
+   "prerequisite": 3,
+   "verify": 1
+  },
+  "downloaded_mib": 739,
+  "config_written_by_hand": [],
+  "config_lines": 0,
+  "checks": {
+   "user_ready_s": 0.6,
+   "notebook_ready_s": 2.3,
+   "first_job_s": 18.1,
+   "first_job_status": "succeeded"
+  },
+  "versions": {
+   "docker": "Docker version 29.9.3, build 5457199",
+   "compose": "5.7.0",
+   "source": "tarball"
+  },
+  "apt_mirror": "http://mirror.bizflycloud.vn",
+  "path": "runs/e6-platform/20261110T142945"
+ },
+ "slurm": {
+  "stack": "slurm",
+  "outcome": "ok",
+  "machine": {
+   "os": "Ubuntu 24.04.5 LTS",
+   "kernel": "6.11.0-29-generic",
+   "cpu": "Intel(R) Core(TM) i9-14900K",
+   "cores": 32,
+   "memory_mib": 64059,
+   "gpus": 0,
+   "gpu_names": "",
+   "driver": "",
+   "cgroup": "cgroup2fs"
+  },
+  "steps": [
+   {
+    "step": "apt-base",
+    "kind": "prerequisite",
+    "seconds": 4.6,
+    "rc": 0,
+    "downloaded_mib": 46
+   },
+   {
+    "step": "slurm-packages",
+    "kind": "install",
+    "seconds": 10.3,
+    "rc": 0,
+    "downloaded_mib": 91
+   },
+   {
+    "step": "database",
+    "kind": "configure",
+    "seconds": 0.5,
+    "rc": 0,
+    "downloaded_mib": 0
+   },
+   {
+    "step": "slurm-config",
+    "kind": "configure",
+    "seconds": 0.4,
+    "rc": 0,
+    "downloaded_mib": 0
+   },
+   {
+    "step": "slurm-start",
+    "kind": "start",
+    "seconds": 15.1,
+    "rc": 0,
+    "downloaded_mib": 0
+   },
+   {
+    "step": "jupyterhub-packages",
+    "kind": "install",
+    "seconds": 54.2,
+    "rc": 0,
+    "downloaded_mib": 119
+   },
+   {
+    "step": "jupyterhub-config",
+    "kind": "configure",
+    "seconds": 3.3,
+    "rc": 0,
+    "downloaded_mib": 0
+   },
+   {
+    "step": "first-user-notebook-job",
+    "kind": "verify",
+    "seconds": 5.3,
+    "rc": 0,
+    "downloaded_mib": 0
+   }
+  ],
+  "total_seconds": 94.9,
+  "steps_by_kind": {
+   "configure": 3,
+   "install": 2,
+   "prerequisite": 1,
+   "start": 1,
+   "verify": 1
+  },
+  "downloaded_mib": 256,
+  "config_written_by_hand": [
+   {
+    "file": "/root/e6/e6_slurm_e6slurm_20261110T063901/slurm_db.sql",
+    "lines": 3
+   },
+   {
+    "file": "/etc/slurm/slurm.conf",
+    "lines": 22
+   },
+   {
+    "file": "/etc/slurm/cgroup.conf",
+    "lines": 4
+   },
+   {
+    "file": "/etc/slurm/slurmdbd.conf",
+    "lines": 9
+   },
+   {
+    "file": "/etc/jupyterhub/jupyterhub_config.py",
+    "lines": 21
+   },
+   {
+    "file": "/etc/systemd/system/jupyterhub.service",
+    "lines": 11
+   }
+  ],
+  "config_lines": 70,
+  "checks": {
+   "user_ready_s": 0.0,
+   "notebook_ready_s": 2.1,
+   "first_job_s": 3.2,
+   "first_job_status": "COMPLETED"
+  },
+  "versions": {
+   "slurm": "slurm-wlm 23.11.4",
+   "mariadb": "mysql  Ver 15.1 Distrib 10.11.14-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper",
+   "jupyterhub": "6.2.0",
+   "batchspawner": "1.3.0",
+   "node": "v18.19.1"
+  },
+  "apt_mirror": "http://mirror.bizflycloud.vn",
+  "path": "runs/e6-slurm/20261110T143858"
+ }
+}

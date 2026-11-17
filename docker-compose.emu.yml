@@ -1,0 +1,75 @@
+# Two emulated nodes on one host, for testing and for experiment E4
+# (docs/multi-node.md).  Each is the backend image in ROLE=node with one of
+# the host's GPUs, its own container names and labels (INSTANCE_NAME) and its
+# own small data directory; the homes are the master's, as an NFS mount would
+# make them.  Each node has its own copy of the HAMi-core build in its data
+# directory (emu_nodes.sh copies the master's), as a real node builds its own:
+# a node writes each job's limit files next to the library.  They join the
+# dev master over its Docker network.
+#
+#   scripts/experiments/emu_nodes.sh up      # tokens, then these two services
+#   scripts/experiments/emu_nodes.sh down
+#
+# Use with the dev stack's files:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
+#                  -f docker-compose.host.yml -f docker-compose.emu.yml ...
+
+x-node: &node
+  image: gpu-platform-dev-backend
+  pid: host
+  restart: unless-stopped
+  networks: [gpu-net]
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+  volumes:
+    - ./jupyter_data:/jupyter_data
+    - /var/run/docker.sock:/var/run/docker.sock
+
+x-node-env: &node-env
+  ROLE: node
+  MASTER_URL: http://backend:8000
+  DOCKER_NETWORK: ${DOCKER_NETWORK:-gpu-platform-dev_net}
+  JUPYTER_DATA_DIR: /jupyter_data
+  JUPYTER_DATA_HOST_DIR: ${JUPYTER_DATA_HOST_DIR}
+  JUPYTER_IMAGE: ${JUPYTER_IMAGE:-gpu-jupyter:latest}
+  GPU_HARD_VRAM_LIMIT: ${GPU_HARD_VRAM_LIMIT:-false}
+  SECRET_KEY: ${SECRET_KEY}
+  DEFAULT_MEMORY_LIMIT_MB: ${DEFAULT_MEMORY_LIMIT_MB:-8192}
+  DEFAULT_CPU_CORES: ${DEFAULT_CPU_CORES:-2}
+  NODE_HEARTBEAT_SECONDS: ${NODE_HEARTBEAT_SECONDS:-2}
+
+services:
+  node1:
+    <<: *node
+    environment:
+      <<: *node-env
+      NODE_NAME: emu1
+      NODE_DATA_URL: http://node1:8000
+      NODE_GPUS: "0"
+      INSTANCE_NAME: emu1
+      JOIN_TOKEN: ${EMU1_JOIN_TOKEN:-}
+      HAMI_HOST_DIR: ${EMU1_HAMI_HOST_DIR:-}
+    volumes:
+      - ./jupyter_data:/jupyter_data
+      - ./data/emu1:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  node2:
+    <<: *node
+    environment:
+      <<: *node-env
+      NODE_NAME: emu2
+      NODE_DATA_URL: http://node2:8000
+      NODE_GPUS: "1"
+      INSTANCE_NAME: emu2
+      JOIN_TOKEN: ${EMU2_JOIN_TOKEN:-}
+      HAMI_HOST_DIR: ${EMU2_HAMI_HOST_DIR:-}
+    volumes:
+      - ./jupyter_data:/jupyter_data
+      - ./data/emu2:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock

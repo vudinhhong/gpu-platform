@@ -1,0 +1,103 @@
+[
+ {
+  "id": "e4-latency",
+  "gpus": [],
+  "timeout_min": 120,
+  "max_attempts": 10,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e4_nodes.py",
+   "latency",
+   "--remote-gpus",
+   ""
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e4_cleanup.sh"
+  ],
+  "min_disk_gib": 8
+ },
+ {
+  "id": "e4-failure",
+  "gpus": [
+   0
+  ],
+  "min_free_mib": 4000,
+  "timeout_min": 120,
+  "max_attempts": 20,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e4_nodes.py",
+   "failure"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e4_cleanup.sh"
+  ],
+  "min_disk_gib": 8
+ },
+ {
+  "id": "e4-placement",
+  "gpus": [
+   0,
+   1
+  ],
+  "min_free_mib": 34000,
+  "timeout_min": 60,
+  "max_attempts": 40,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e4_nodes.py",
+   "placement"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e4_cleanup.sh"
+  ],
+  "min_disk_gib": 8
+ },
+ {
+  "id": "e4-failure-fixed",
+  "gpus": [
+   0
+  ],
+  "min_free_mib": 4000,
+  "timeout_min": 120,
+  "max_attempts": 20,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e4_nodes.py",
+   "failure"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e4_cleanup.sh"
+  ],
+  "min_disk_gib": 8
+ },
+ {
+  "id": "e4-placement-fixed",
+  "gpus": [
+   0,
+   1
+  ],
+  "min_free_mib": 34000,
+  "timeout_min": 60,
+  "max_attempts": 40,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e4_nodes.py",
+   "placement"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e4_cleanup.sh"
+  ],
+  "min_disk_gib": 8
+ }
+]

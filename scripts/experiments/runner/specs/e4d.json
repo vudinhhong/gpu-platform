@@ -1,0 +1,5 @@
+[
+ {"id": "e4-latency-raw-2", "gpus": [0], "min_free_mib": 4000, "min_disk_gib": 8, "timeout_min": 60,
+  "max_attempts": 20, "cmd": ["python3", "-u", "scripts/experiments/e4_nodes.py", "latency"],
+  "cleanup": ["bash", "scripts/experiments/e4_cleanup.sh"]}
+]

@@ -31,6 +31,9 @@ services:
       - JUPYTER_IMAGE=${JUPYTER_IMAGE:-gpu-jupyter:latest}
       - JUPYTER_IMAGES=${JUPYTER_IMAGES:-}
       - DOCKER_NETWORK=${DOCKER_NETWORK:-workspace-gpu_gpu-net}
+      - INSTANCE_NAME=${INSTANCE_NAME:-}
+      - NODE_NAME=${NODE_NAME:-}
+      - NODE_SITE=${NODE_SITE:-default}
       - DEFAULT_MEMORY_LIMIT_MB=${DEFAULT_MEMORY_LIMIT_MB:-8192}
       - DEFAULT_CPU_LIMIT_SECONDS=${DEFAULT_CPU_LIMIT_SECONDS:-0}
       - DEFAULT_CPU_CORES=${DEFAULT_CPU_CORES:-2}
@@ -46,6 +49,14 @@ services:
       - SSH_PASSWORD_AUTH=${SSH_PASSWORD_AUTH:-false}
       - LOGIN_MAX_FAILURES=${LOGIN_MAX_FAILURES:-8}
       - LOGIN_LOCKOUT_SECONDS=${LOGIN_LOCKOUT_SECONDS:-900}
+      # Sign-in through Google or another OpenID Connect provider; off while
+      # OIDC_CLIENT_ID is empty (docs/admin-guide.md).
+      - OIDC_ISSUER=${OIDC_ISSUER:-https://accounts.google.com}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_REDIRECT_URL=${OIDC_REDIRECT_URL:-}
+      - OIDC_LABEL=${OIDC_LABEL:-Google}
+      - OIDC_ALLOWED_DOMAINS=${OIDC_ALLOWED_DOMAINS:-}
       # ── Quotas & lifecycle ────────────────────────────────────────────
       - DEFAULT_DISK_QUOTA_MB=${DEFAULT_DISK_QUOTA_MB:-0}
       - DISK_QUOTA_ACTION=${DISK_QUOTA_ACTION:-warn}
@@ -59,6 +70,7 @@ services:
       # ── Batch job queue ───────────────────────────────────────────────
       - JOBS_ENABLED=${JOBS_ENABLED:-true}
       - JOB_SCHEDULER_INTERVAL=${JOB_SCHEDULER_INTERVAL:-10}
+      - LOOP_TIMING_LOG=${LOOP_TIMING_LOG:-false}
       - JOB_MAX_RUNNING_PER_USER=${JOB_MAX_RUNNING_PER_USER:-2}
       - JOB_MAX_QUEUED_PER_USER=${JOB_MAX_QUEUED_PER_USER:-50}
       - JOB_GPU_HEADROOM_MB=${JOB_GPU_HEADROOM_MB:-512}
@@ -70,6 +82,8 @@ services:
       - JOB_GPU_OVERRUN_FACTOR=${JOB_GPU_OVERRUN_FACTOR:-1.1}
       - JOB_GPU_OVERRUN_GRACE_MB=${JOB_GPU_OVERRUN_GRACE_MB:-1024}
       - JOB_GPU_OVERRUN_ACTION=${JOB_GPU_OVERRUN_ACTION:-stop}
+      - GPU_HARD_VRAM_LIMIT=${GPU_HARD_VRAM_LIMIT:-false}
+      - HAMI_HOST_DIR=${HAMI_HOST_DIR:-}
       - JOB_OUTPUT_WARN_MB=${JOB_OUTPUT_WARN_MB:-512}
       - JOB_MAX_OUTPUT_MB=${JOB_MAX_OUTPUT_MB:-0}
       - JOB_CPU_POOL_CORES=${JOB_CPU_POOL_CORES:-0}
@@ -105,7 +119,7 @@ services:
     ports:
       # Loopback by default: the API is reached through the web tier, not
       # directly from the network.  Set BACKEND_BIND=0.0.0.0 to expose it.
-      - "${BACKEND_BIND:-127.0.0.1}:8000:8000"
+      - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped
     networks:
       - gpu-net
@@ -145,7 +159,9 @@ services:
 networks:
   gpu-net:
     driver: bridge
-    name: workspace-gpu_gpu-net
+    # A second installation on the same daemon (INSTANCE_NAME) needs its own
+    # network and bridge; the defaults are the original names.
+    name: ${DOCKER_NETWORK:-workspace-gpu_gpu-net}
     driver_opts:
       # Pin the bridge interface name.  Docker otherwise derives it from the
       # network ID (br-<hash>), which changes every time the network is
@@ -153,4 +169,4 @@ networks:
       # stops matching.  On a host with a default-DROP OUTPUT policy that
       # shows up as a 504 from the reverse proxy, because docker-proxy can no
       # longer reach the container.  See scripts/host_firewall_setup.sh.
-      com.docker.network.bridge.name: gpu-platform0
+      com.docker.network.bridge.name: ${DOCKER_BRIDGE_NAME:-gpu-platform0}

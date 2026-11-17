@@ -46,10 +46,16 @@ CONTAINER_UID = 1000
 # Safe characters for container names
 _NAME_RE = re.compile(r"[^a-z0-9_-]")
 
-# Labels let the metrics collector and admin tooling recognise our containers
-LABEL_USER = "gpu-platform.user"
-LABEL_ROLE = "gpu-platform.role"
-LABEL_JOB  = "gpu-platform.job"
+# Labels let the metrics collector and admin tooling recognise our containers.
+# A named instance (settings.INSTANCE_NAME) gets its own label namespace and
+# name prefix, so two installations on one Docker daemon never touch each
+# other's containers.
+_INSTANCE = _NAME_RE.sub("", (settings.INSTANCE_NAME or "").lower())
+_LABEL_NS = f"gpu-platform-{_INSTANCE}" if _INSTANCE else "gpu-platform"
+NAME_PREFIX = f"gpu-{_INSTANCE}-" if _INSTANCE else "gpu-"
+LABEL_USER = f"{_LABEL_NS}.user"
+LABEL_ROLE = f"{_LABEL_NS}.role"
+LABEL_JOB  = f"{_LABEL_NS}.job"
 
 
 def _docker_client():
@@ -79,7 +85,7 @@ def _docker_client():
 
 def container_name(username: str) -> str:
     """Deterministic container name for a platform user."""
-    return "gpu-jupyter-" + sanitize_username(username)
+    return NAME_PREFIX + "jupyter-" + sanitize_username(username)
 
 
 def container_hostname(username: str) -> str:
@@ -274,6 +280,190 @@ def _device_requests(device_ids: List[str]):
             capabilities=[["gpu", "compute", "utility"]],
         )
     ]
+
+
+# ---------------------------------------------------------------------------
+# Hard GPU memory limit (HAMi-core, settings.GPU_HARD_VRAM_LIMIT)
+#
+# Four files go into the container.  The library, where HAMi-core expects to
+# find itself when it intercepts dlsym.  /etc/ld.so.preload naming it, so the
+# dynamic loader puts it into every process, a login shell and a Jupyter
+# kernel as much as the job script, and LD_PRELOAD being unset changes
+# nothing.  /overrideEnv, which HAMi-core reads at start-up and applies over
+# the environment, so the limit a user sees in `env` is not the one that
+# counts.  Those three are root's and read-only.  The fourth is the usage
+# region the container's processes share: it has to be writable by them, but
+# its directory is not, so it cannot be deleted and replaced with a fresh,
+# empty one by a process that wants its own count.
+# ---------------------------------------------------------------------------
+
+_HAMI_LIB_IN_CONTAINER = "/usr/local/vgpu/libvgpu.so"   # HAMi-core's CUDA_REDIRECT default
+_HAMI_CACHE_IN_CONTAINER = "/run/vgpu/usage.cache"
+#: HAMi-core's CUDA_DEVICE_MAX_COUNT: a limit is written for every index it
+#: knows, so renumbering the devices with CUDA_VISIBLE_DEVICES finds one too.
+_HAMI_MAX_DEVICES = 16
+
+
+def _driver_version() -> str:
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return (out.strip().splitlines() or [""])[0].strip()
+
+
+def hami_status() -> Dict[str, Any]:
+    """Whether hard limits are on and can be applied, and if not, why.
+
+    A library built for another driver is refused rather than tried: HAMi-core
+    hooks driver entry points by version, and one that loads but does not
+    enforce is worse than none, because it looks like a limit.
+    """
+    status: Dict[str, Any] = {"enabled": bool(settings.GPU_HARD_VRAM_LIMIT), "usable": False}
+    if not status["enabled"]:
+        status["reason"] = "GPU_HARD_VRAM_LIMIT is off"
+        return status
+    lib = os.path.join(settings.HAMI_DIR, "libvgpu.so")
+    info_path = os.path.join(settings.HAMI_DIR, "build-info.json")
+    if not (os.path.isfile(lib) and os.path.isfile(info_path)):
+        status["reason"] = f"no build in {settings.HAMI_DIR}; run scripts/hami/build_hami.sh"
+        return status
+    if not settings.HAMI_HOST_DIR:
+        status["reason"] = "HAMI_HOST_DIR is not set"
+        return status
+    try:
+        with open(info_path) as fh:
+            info = json.load(fh)
+    except (OSError, ValueError) as exc:
+        status["reason"] = f"unreadable {info_path}: {exc}"
+        return status
+    status["build"] = info
+    driver = _driver_version()
+    if not driver or info.get("driver") != driver:
+        status["reason"] = (f"built for driver {info.get('driver')!r}, host has {driver!r}; "
+                            "rebuild with scripts/hami/build_hami.sh")
+        return status
+    # Loading is not enforcing.  scripts/hami/verify.py allocates past a limit
+    # on this host's GPU and records the build and driver only if that failed
+    # as it should; anything else is not trusted with a promise.
+    try:
+        with open(os.path.join(settings.HAMI_DIR, "verified.json")) as fh:
+            verified = json.load(fh)
+    except (OSError, ValueError):
+        verified = {}
+    if verified.get("sha256") != info.get("sha256") or verified.get("driver") != driver:
+        status["reason"] = ("this build has not been verified on this driver; "
+                            "run scripts/hami/verify.py")
+        return status
+    status["usable"] = True
+    return status
+
+
+_HAMI_IMAGES: Dict[str, bool] = {}
+
+
+def hami_image_ok(image: str) -> bool:
+    """Can the dynamic loader of *image* load this build of the library?
+
+    A library the loader cannot load is not an error: ld.so prints a warning
+    about /etc/ld.so.preload and runs the program anyway, without the limit.
+    So each image is asked once (``ldd`` on the library, which loads nothing
+    and needs no GPU) before a limit is promised in it; the answer is kept per
+    image id and library build.  An image built on an older glibc than the
+    library, or on musl, fails here.
+    """
+    try:
+        client = _docker_client()
+        image_id = client.images.get(image).id
+        with open(os.path.join(settings.HAMI_DIR, "build-info.json")) as fh:
+            build = json.load(fh).get("sha256", "")
+    except Exception as exc:  # noqa: BLE001 (no daemon, no image, no build)
+        logger.warning("Cannot check image %s for the GPU memory limit: %s", image, exc)
+        return False
+    key = f"{image_id}:{build}"
+    cache_path = os.path.join(settings.HAMI_DIR, "images.json")
+    if not _HAMI_IMAGES:
+        try:
+            with open(cache_path) as fh:
+                _HAMI_IMAGES.update(json.load(fh))
+        except (OSError, ValueError):
+            pass
+    if key not in _HAMI_IMAGES:
+        try:
+            out = client.containers.run(
+                image_id, ["ldd", _HAMI_LIB_IN_CONTAINER], entrypoint="", remove=True,
+                network_disabled=True, user="65534:65534", stdout=True, stderr=True,
+                volumes={os.path.join(settings.HAMI_HOST_DIR, "libvgpu.so"):
+                         {"bind": _HAMI_LIB_IN_CONTAINER, "mode": "ro"}},
+            ).decode(errors="replace")
+            ok = "not found" not in out and "libc.so" in out
+        except Exception as exc:  # noqa: BLE001 (ldd missing or failing: not loadable)
+            out, ok = str(exc), False
+        if not ok:
+            logger.warning("Image %s cannot load the GPU memory limit library: %s",
+                           image, out.strip()[-300:])
+        _HAMI_IMAGES[key] = ok
+        try:
+            with open(cache_path, "w") as fh:
+                json.dump(_HAMI_IMAGES, fh)
+        except OSError:
+            pass
+    return _HAMI_IMAGES[key]
+
+
+def hami_kwargs(name: str, limit_mb: int, image: Optional[str] = None) -> Dict[str, Any]:
+    """Volumes that hold every card of container *name* to *limit_mb*.
+
+    Empty when hard limits are off or cannot be applied, including in an
+    *image* whose loader cannot load the library; the after-the-fact check is
+    then the only enforcement, as it was before.
+    """
+    if limit_mb <= 0:
+        return {}
+    status = hami_status()
+    if not status["usable"]:
+        if status["enabled"]:
+            logger.warning("Hard GPU memory limit not applied to %s: %s", name, status["reason"])
+        return {}
+    if image and not hami_image_ok(image):
+        logger.warning("Hard GPU memory limit not applied to %s: image %s cannot load it",
+                       name, image)
+        return {}
+
+    run = os.path.join(settings.HAMI_DIR, "run", name)
+    os.makedirs(run, exist_ok=True)
+    lines = [f"CUDA_DEVICE_MEMORY_LIMIT={limit_mb}m"]
+    lines += [f"CUDA_DEVICE_MEMORY_LIMIT_{i}={limit_mb}m" for i in range(_HAMI_MAX_DEVICES)]
+    lines += [
+        f"CUDA_DEVICE_MEMORY_SHARED_CACHE={_HAMI_CACHE_IN_CONTAINER}",
+        f"CUDA_REDIRECT={_HAMI_LIB_IN_CONTAINER}",
+        # Memory only: an SM share is not something the platform hands out.
+        "CUDA_DEVICE_SM_LIMIT=0",
+        "GPU_CORE_UTILIZATION_POLICY=disable",
+    ]
+    files = {
+        "overrideEnv": ("\n".join(lines) + "\n", 0o644),
+        "ld.so.preload": (_HAMI_LIB_IN_CONTAINER + "\n", 0o644),
+        # A fresh region per start: usage left over from a previous run of the
+        # same name would count against this one.
+        "usage.cache": ("", 0o666),
+    }
+    for filename, (content, mode) in files.items():
+        path = os.path.join(run, filename)
+        with open(path, "w") as fh:
+            fh.write(content)
+        os.chmod(path, mode)
+
+    host = os.path.join(settings.HAMI_HOST_DIR, "run", name)
+    return {"volumes": {
+        os.path.join(settings.HAMI_HOST_DIR, "libvgpu.so"): {"bind": _HAMI_LIB_IN_CONTAINER, "mode": "ro"},
+        f"{host}/ld.so.preload": {"bind": "/etc/ld.so.preload", "mode": "ro"},
+        f"{host}/overrideEnv": {"bind": "/overrideEnv", "mode": "ro"},
+        f"{host}/usage.cache": {"bind": _HAMI_CACHE_IN_CONTAINER, "mode": "rw"},
+    }}
 
 
 # ---------------------------------------------------------------------------
@@ -662,6 +852,24 @@ def start_user_container(
         kwargs["environment"]["NVIDIA_VISIBLE_DEVICES"] = "void"
         kwargs["environment"]["CUDA_VISIBLE_DEVICES"] = ""
 
+    # A per-card ceiling on the workspace's GPU memory, when the administrator
+    # set one.  Without it the workspace may fill its cards, as before.
+    assignment = getattr(user, "gpu_assignment", None)
+    vram_limit = getattr(assignment, "gpu_memory_limit_mb", None)
+    if device_ids and vram_limit:
+        kwargs["volumes"].update(
+            hami_kwargs(name, int(vram_limit), image=chosen_image).get("volumes", {}))
+
+    # The account inside the container is the user's, with the uid that owns
+    # the workspace, whether or not SSH is on.  It used to be set only with
+    # an SSH port, so once the port range was used up a new workspace ran as
+    # "jupyter" with uid 1000, whoever owned its files.
+    kwargs["environment"].update({
+        "SSH_USER_NAME": username,
+        "SSH_USER_UID": str(owner),
+        "SSH_USER_GID": str(space.gid if space else CONTAINER_UID),
+    })
+
     # ── SSH sidecar ───────────────────────────────────────────────────────
     ssh_password = None
     candidates: List[int] = []
@@ -676,9 +884,6 @@ def start_user_container(
         else:
             kwargs["environment"].update({
                 "SSH_ENABLED": "1",
-                "SSH_USER_NAME": username,
-                "SSH_USER_UID": str(owner),
-                "SSH_USER_GID": str(space.gid if space else CONTAINER_UID),
                 "SSH_PUBLIC_KEY": ssh_public_key or "",
                 "SSH_PASSWORD_AUTH": "1" if settings.SSH_PASSWORD_AUTH else "0",
             })
@@ -1224,7 +1429,7 @@ def environment_is_current(username: str) -> Optional[bool]:
 
 
 def job_container_name(job_id: int) -> str:
-    return f"gpu-job-{job_id}"
+    return f"{NAME_PREFIX}job-{job_id}"
 
 
 def start_job_container(job, user) -> Dict[str, Any]:
@@ -1328,12 +1533,23 @@ def start_job_container(job, user) -> Dict[str, Any]:
         kwargs["environment"]["NVIDIA_VISIBLE_DEVICES"] = "void"
         kwargs["environment"]["CUDA_VISIBLE_DEVICES"] = ""
 
+    # The hard limit is the same allowance the after-the-fact check applies,
+    # so a job is refused memory at exactly the point it would have been
+    # stopped for holding it.
+    hard = {}
+    if device_ids and job.gpu_memory_mb and job.gpu_memory_enforced:
+        from services.jobs import gpu_overrun_allowance_mb
+
+        hard = hami_kwargs(name, gpu_overrun_allowance_mb(job.gpu_memory_mb), image=image)
+        kwargs["volumes"].update(hard.get("volumes", {}))
+
     container, _ = _run_with_fallbacks(client, kwargs, name, [])
     logger.info(
-        "Started job %d for %r on GPU(s) %s (mem=%sMB cpus=%s)",
+        "Started job %d for %r on GPU(s) %s (mem=%sMB cpus=%s%s)",
         job.id, user.username, job.gpu_indices or "none", memory_limit_mb, cpu_cores,
+        ", hard VRAM limit" if hard else "",
     )
-    return {"container_id": container.id, "name": name}
+    return {"container_id": container.id, "name": name, "hard_vram_limit": bool(hard)}
 
 
 def job_container_state(job_id: int) -> Optional[Dict[str, Any]]:
@@ -1349,6 +1565,9 @@ def job_container_state(job_id: int) -> Optional[Dict[str, Any]]:
             "exit_code": state.get("ExitCode"),
             "oom_killed": bool(state.get("OOMKilled")),
             "status": container.status,
+            # When it exited, by the clock of the machine it ran on.  The
+            # master may learn of the exit much later, after a node outage.
+            "finished_at": state.get("FinishedAt"),
         }
     except Exception:  # noqa: BLE001 (not found)
         return None

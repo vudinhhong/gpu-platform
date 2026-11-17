@@ -19,6 +19,39 @@ import urllib.parse
 import urllib.request
 
 URL = os.environ.get("PLATFORM_URL", "http://127.0.0.1:8000").rstrip("/")
+# Name of a backend container to send requests from, instead of the host.  On
+# a host whose firewall drops host-to-bridge traffic (see
+# scripts/host_firewall_setup.sh) a second stack's published port is not
+# reachable until the rule for its bridge is added; from inside its backend
+# the API is always on 127.0.0.1:8000.
+EXEC_CONTAINER = os.environ.get("PLATFORM_EXEC", "")
+
+_EXEC_CLIENT = r'''
+import json, sys, urllib.error, urllib.request
+s = json.load(sys.stdin)
+req = urllib.request.Request("http://127.0.0.1:8000" + s["path"], method=s["method"],
+                             data=s["data"].encode("latin-1") if s["data"] is not None else None,
+                             headers=s["headers"])
+try:
+    with urllib.request.urlopen(req, timeout=s["timeout"]) as r:
+        code, body = r.status, r.read()
+except urllib.error.HTTPError as e:
+    code, body = e.code, e.read()
+print(json.dumps({"status": code, "body": body.decode("utf-8", "replace")}))
+'''
+
+
+def _request_via_exec(method, path, headers, data, timeout):
+    spec = {"method": method, "path": path, "headers": headers, "timeout": timeout,
+            "data": data.decode("latin-1") if data is not None else None}
+    out = subprocess.run(["docker", "exec", "-i", EXEC_CONTAINER, "python", "-c", _EXEC_CLIENT],
+                         input=json.dumps(spec), capture_output=True, text=True,
+                         timeout=timeout + 30, check=True)
+    res = json.loads(out.stdout)
+    try:
+        return res["status"], (json.loads(res["body"]) if res["body"] else None)
+    except ValueError:
+        return res["status"], res["body"]
 
 
 def _request(method, path, token=None, json_body=None, form=None, timeout=60):
@@ -32,6 +65,8 @@ def _request(method, path, token=None, json_body=None, form=None, timeout=60):
     elif form is not None:
         data = urllib.parse.urlencode(form).encode()
         headers["Content-Type"] = "application/x-www-form-urlencoded"
+    if EXEC_CONTAINER:
+        return _request_via_exec(method, path, headers, data, timeout)
     req = urllib.request.Request(URL + path, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
@@ -54,6 +89,12 @@ def login(username, password):
 
 
 def admin_token():
+    # Under the experiment runner the target is always the second (dev)
+    # installation.  Reaching the production port from there means the
+    # caller imported this module before the dev defaults were set.
+    if os.environ.get("EXP_ID") and not EXEC_CONTAINER and URL.endswith(":8000"):
+        raise SystemExit("experiment is pointed at the production backend; "
+                         "import e1_vram before platform_api")
     password = os.environ.get("ADMIN_PASSWORD")
     if not password:
         path = os.path.expanduser(os.environ.get("ADMIN_PASSWORD_FILE", "~/.gpu_admin_pw"))

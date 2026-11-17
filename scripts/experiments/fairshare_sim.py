@@ -8,8 +8,8 @@ workloads larger, busier and more varied than one deployment produces:
 * a scheduling pass every ``period`` seconds;
 * a per-user cap on running jobs;
 * GPU placement by free VRAM, densest fit first, where a card's free memory is
-  its total minus the larger of (a) what running jobs actually hold and
-  (b) the allowances of the jobs admitted to it, minus a fixed headroom;
+  its total minus the allowances of the jobs admitted to it, minus whatever
+  else the card holds (an open workspace), minus a fixed headroom;
 * CPU admission against a core pool (the pessimistic "allocated" reading);
 * a job that does not fit is skipped, never allowed to block the queue.
 
@@ -167,16 +167,21 @@ def simulate(jobs: List[Job], cfg: Config, policy: str, horizon: Optional[float]
             for j in running:
                 per_user[j.user] += 1
             held = defaultdict(int)
+            covered = defaultdict(int)
             entitled = defaultdict(int)
             for j in running:
                 for c in j.cards:
                     held[c] += j.actual_mb
+                    covered[c] += min(j.actual_mb, allowance(cfg, j.request_mb))
                     entitled[c] += allowance(cfg, j.request_mb)
             open_ws = [w for w in sessions if w.start <= now < w.end]
             for w in open_ws:
                 for c in w.cards:
                     held[c] += cfg.workspace_mb
-            free = {c: max(0, cfg.vram_mb - max(held[c], entitled[c]) - cfg.headroom_mb)
+            # As services/jobs.gpu_availability: the allowances plus what the
+            # card holds beyond the jobs' own holdings (a workspace, say).
+            free = {c: max(0, cfg.vram_mb - entitled[c] - max(0, held[c] - covered[c])
+                           - cfg.headroom_mb)
                     for c in range(cfg.gpus)}
             free_cores = cfg.cores - sum(j.cores for j in running)
             if cfg.workspace_cores:

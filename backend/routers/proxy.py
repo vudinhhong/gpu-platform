@@ -230,9 +230,59 @@ def _hop_by_hop_headers(headers) -> dict:
     return {k: v for k, v in headers.items() if k.lower() not in blocked}
 
 
-def _upstream(session: SessionView, username: str) -> str:
-    """Base URL of the user's Jupyter container (Docker-network DNS)."""
-    return session_backend.target_base_url(username)
+def _upstream(session: SessionView, username: str):
+    """Base URL of the user's Jupyter and any headers getting there needs.
+
+    The container by Docker-network DNS on the master; the node's data port,
+    with a signed header, when the workspace runs on another node.
+    """
+    return session_backend.target(username)
+
+
+async def forward_http(request: Request, target: str, headers: dict, params,
+                       internal_hosts=()) -> Response:
+    """Send *request* on to *target* and stream the answer back."""
+    client = await get_client()
+    body = await request.body()
+    try:
+        backend_response = await client.request(
+            request.method,
+            target,
+            params=params,
+            headers=headers,
+            content=body if body else None,
+            follow_redirects=False,
+        )
+    except httpx.ConnectError:
+        return Response(status_code=502, content="Jupyter backend unreachable")
+    except httpx.HTTPError as exc:
+        logger.warning("Proxy error for %s: %s", target, exc)
+        return Response(status_code=502, content="Jupyter backend error")
+
+    excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+    response_headers = {
+        k: v for k, v in backend_response.headers.items() if k.lower() not in excluded
+    }
+
+    # Rewrite absolute redirects pointing at the INTERNAL upstream so the
+    # browser stays on the platform origin (critical for Jupyter's post-login
+    # redirect in password mode).
+    if backend_response.is_redirect:
+        location = response_headers.get("location")
+        if location:
+            from urllib.parse import urlsplit
+
+            parts = urlsplit(location)
+            if parts.netloc and parts.netloc in set(internal_hosts):
+                response_headers["location"] = (
+                    parts.path + ("?" + parts.query if parts.query else "")
+                )
+
+    return StreamingResponse(
+        backend_response.aiter_bytes(),
+        status_code=backend_response.status_code,
+        headers=response_headers,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -260,12 +310,15 @@ async def proxy_jupyter(username: str, path: str, request: Request):
             content="Jupyter server is not running. Start it from the dashboard.",
         )
 
-    backend_base = _upstream(session, username)
+    try:
+        backend_base, extra_headers = _upstream(session, username)
+    except Exception as exc:  # noqa: BLE001 (node gone, or not set up for it)
+        logger.warning("No route to %s's workspace: %s", username, exc)
+        return Response(status_code=502, content="Jupyter backend unreachable")
     # base_url is /jupyter/<username>/, the upstream Jupyter was configured
     # with the same base_url, so the full original path maps 1:1.
     upstream_path = f"{session.base_url}{path}" if path else session.base_url
     target = f"{backend_base}{upstream_path}"
-    client = await get_client()
 
     # Host is intentionally NOT pinned: httpx derives it from the target URL,
     # so container-mode requests get the container's own hostname instead of a
@@ -273,50 +326,18 @@ async def proxy_jupyter(username: str, path: str, request: Request):
     headers = _upstream_auth_headers(
         session, auth_method, _hop_by_hop_headers(request.headers)
     )
-    body = await request.body()
+    headers.update(extra_headers)
 
-    try:
-        backend_response = await client.request(
-            request.method,
-            target,
-            params=_forwarded_query(request.query_params),
-            headers=headers,
-            content=body if body else None,
-            follow_redirects=False,
-        )
-    except httpx.ConnectError:
-        return Response(status_code=502, content="Jupyter backend unreachable")
-    except httpx.HTTPError as exc:
-        logger.warning("Proxy error for %s%s: %s", username, upstream_path, exc)
-        return Response(status_code=502, content="Jupyter backend error")
+    from urllib.parse import urlsplit
 
-    await asyncio.to_thread(touch_activity, session.user_id)
-
-    excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
-    response_headers = {
-        k: v for k, v in backend_response.headers.items() if k.lower() not in excluded
-    }
-
-    # Rewrite absolute redirects pointing at the INTERNAL upstream so the
-    # browser stays on the platform origin (critical for Jupyter's post-login
-    # redirect in password mode).
-    if backend_response.is_redirect:
-        location = response_headers.get("location")
-        if location:
-            from urllib.parse import urlsplit
-
-            parts = urlsplit(location)
-            internal_host = urlsplit(backend_base).netloc
-            if parts.netloc in {internal_host, f"127.0.0.1:{session.port}", f"localhost:{session.port}"}:
-                response_headers["location"] = (
-                    parts.path + ("?" + parts.query if parts.query else "")
-                )
-
-    return StreamingResponse(
-        backend_response.aiter_bytes(),
-        status_code=backend_response.status_code,
-        headers=response_headers,
+    response = await forward_http(
+        request, target, headers, _forwarded_query(request.query_params),
+        internal_hosts=(urlsplit(backend_base).netloc,
+                        f"127.0.0.1:{session.port}", f"localhost:{session.port}"),
     )
+    if response.status_code != 502:
+        await asyncio.to_thread(touch_activity, session.user_id)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +378,12 @@ async def proxy_jupyter_ws(websocket: WebSocket, username: str, path: str):
         await websocket.close(code=4404)
         return
 
-    backend_base = _upstream(session, username)
+    try:
+        backend_base, extra_headers = _upstream(session, username)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("No route to %s's workspace: %s", username, exc)
+        await websocket.close(code=1011)
+        return
     upstream_path = f"{session.base_url}{path}" if path else session.base_url
     query = "&".join(f"{k}={v}" for k, v in _forwarded_query(websocket.query_params).items())
     ws_target = f"{backend_base}{upstream_path}".replace("http://", "ws://", 1)
@@ -370,19 +396,27 @@ async def proxy_jupyter_ws(websocket: WebSocket, username: str, path: str):
     requested = websocket.headers.get("sec-websocket-protocol")
     subprotocols = [p.strip() for p in requested.split(",")] if requested else None
 
-    headers = list(
-        _upstream_auth_headers(
-            session,
-            auth_method,
-            {
-                k: v for k, v in websocket.headers.items()
-                if k.lower() not in _WS_SKIP_HEADERS
-            },
-        ).items()
+    headers = _upstream_auth_headers(
+        session,
+        auth_method,
+        {
+            k: v for k, v in websocket.headers.items()
+            if k.lower() not in _WS_SKIP_HEADERS
+        },
     )
+    headers.update(extra_headers)
 
+    async def opened() -> None:
+        await asyncio.to_thread(touch_activity, session.user_id)
+
+    await forward_ws(websocket, ws_target, headers, subprotocols, on_open=opened)
+
+
+async def forward_ws(websocket: WebSocket, ws_target: str, headers: dict,
+                     subprotocols, on_open=None) -> None:
+    """Join *websocket* to a new connection to *ws_target* until either ends."""
     connect_kwargs = {
-        _WS_HEADER_KWARG: headers,
+        _WS_HEADER_KWARG: list(headers.items()),
         "subprotocols": subprotocols,
         "open_timeout": 20,
         "ping_interval": 20,
@@ -399,7 +433,8 @@ async def proxy_jupyter_ws(websocket: WebSocket, username: str, path: str):
         return
 
     await websocket.accept(subprotocol=upstream.subprotocol)
-    await asyncio.to_thread(touch_activity, session.user_id)
+    if on_open is not None:
+        await on_open()
 
     async def client_to_upstream() -> None:
         while True:
@@ -429,7 +464,7 @@ async def proxy_jupyter_ws(websocket: WebSocket, username: str, path: str):
     except WebSocketDisconnect:
         pass
     except Exception as exc:  # noqa: BLE001 (either side vanished)
-        logger.debug("WS proxy for %s ended: %s", username, exc)
+        logger.debug("WS proxy to %s ended: %s", ws_target, exc)
     finally:
         await upstream.close()
         try:

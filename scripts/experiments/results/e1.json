@@ -1,0 +1,528 @@
+{
+ "source": "results/runs/e1-*, e1b-*",
+ "e1": {
+  "monitor": {
+   "trials": 30,
+   "gpus": [
+    0,
+    1
+   ],
+   "free_mib": [
+    38795,
+    40725,
+    42925
+   ],
+   "base_mib": [
+    15360,
+    16128,
+    17152
+   ],
+   "burst": {
+    "trials": 15,
+    "neighbour_oom": 0,
+    "offender_stopped": 5,
+    "offender_refused": 10,
+    "offender_survived": 10,
+    "stopped_after_s": {
+     "n": 5,
+     "min": 0.151,
+     "median": 0.251,
+     "max": 0.853
+    },
+    "refused_after_s": {
+     "n": 10,
+     "min": 0.002,
+     "median": 0.002,
+     "max": 0.027
+    },
+    "refused_at_mib": {
+     "n": 10,
+     "min": 0,
+     "median": 0.0,
+     "max": 0
+    },
+    "over_mib": [
+     2048,
+     8192,
+     16384
+    ]
+   },
+   "ramp": {
+    "trials": 15,
+    "neighbour_oom": 0,
+    "offender_stopped": 15,
+    "offender_refused": 0,
+    "offender_survived": 0,
+    "stopped_after_s": {
+     "n": 15,
+     "min": 0.251,
+     "median": 0.755,
+     "max": 1.209
+    },
+    "refused_after_s": null,
+    "refused_at_mib": null,
+    "over_mib": [
+     2048,
+     8192,
+     16384
+    ]
+   }
+  },
+  "hami": {
+   "trials": 30,
+   "gpus": [
+    0
+   ],
+   "free_mib": [
+    40725
+   ],
+   "base_mib": [
+    16128
+   ],
+   "burst": {
+    "trials": 15,
+    "neighbour_oom": 0,
+    "offender_stopped": 0,
+    "offender_refused": 15,
+    "offender_survived": 15,
+    "stopped_after_s": null,
+    "refused_after_s": {
+     "n": 15,
+     "min": 0.001,
+     "median": 0.002,
+     "max": 0.002
+    },
+    "refused_at_mib": {
+     "n": 15,
+     "min": 0,
+     "median": 0,
+     "max": 0
+    },
+    "over_mib": [
+     2048,
+     8192,
+     16384
+    ]
+   },
+   "ramp": {
+    "trials": 15,
+    "neighbour_oom": 0,
+    "offender_stopped": 0,
+    "offender_refused": 15,
+    "offender_survived": 15,
+    "stopped_after_s": null,
+    "refused_after_s": {
+     "n": 15,
+     "min": 0.202,
+     "median": 0.203,
+     "max": 0.205
+    },
+    "refused_at_mib": {
+     "n": 15,
+     "min": 1024,
+     "median": 1024,
+     "max": 1024
+    },
+    "over_mib": [
+     2048,
+     8192,
+     16384
+    ]
+   }
+  },
+  "both": {
+   "trials": 30,
+   "gpus": [
+    0
+   ],
+   "free_mib": [
+    40725
+   ],
+   "base_mib": [
+    16128
+   ],
+   "burst": {
+    "trials": 15,
+    "neighbour_oom": 0,
+    "offender_stopped": 0,
+    "offender_refused": 15,
+    "offender_survived": 15,
+    "stopped_after_s": null,
+    "refused_after_s": {
+     "n": 15,
+     "min": 0.001,
+     "median": 0.001,
+     "max": 0.003
+    },
+    "refused_at_mib": {
+     "n": 15,
+     "min": 0,
+     "median": 0,
+     "max": 0
+    },
+    "over_mib": [
+     2048,
+     8192,
+     16384
+    ]
+   },
+   "ramp": {
+    "trials": 15,
+    "neighbour_oom": 0,
+    "offender_stopped": 0,
+    "offender_refused": 15,
+    "offender_survived": 15,
+    "stopped_after_s": null,
+    "refused_after_s": {
+     "n": 15,
+     "min": 0.202,
+     "median": 0.203,
+     "max": 0.206
+    },
+    "refused_at_mib": {
+     "n": 15,
+     "min": 1024,
+     "median": 1024,
+     "max": 1024
+    },
+    "over_mib": [
+     2048,
+     8192,
+     16384
+    ]
+   }
+  }
+ },
+ "e1b": {
+  "monitor": {
+   "trials": 30,
+   "free_mib": 40725,
+   "request_mib": 18176,
+   "hold_mib": 8960,
+   "over_mib": 9984,
+   "neighbour_oom": 3,
+   "cells": [
+    {
+     "pattern": "burst",
+     "delay_s": 0.0,
+     "trials": 3,
+     "neighbour_oom": 3,
+     "offender_stopped": 3,
+     "offender_refused": 0,
+     "stopped_after_s": {
+      "n": 3,
+      "min": 0.052,
+      "median": 0.854,
+      "max": 0.954
+     },
+     "refused_at_mib": null
+    },
+    {
+     "pattern": "burst",
+     "delay_s": 0.5,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 3,
+     "offender_refused": 0,
+     "stopped_after_s": {
+      "n": 3,
+      "min": 0.102,
+      "median": 0.151,
+      "max": 0.152
+     },
+     "refused_at_mib": null
+    },
+    {
+     "pattern": "burst",
+     "delay_s": 1.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 3,
+     "offender_refused": 0,
+     "stopped_after_s": {
+      "n": 3,
+      "min": 0.202,
+      "median": 0.202,
+      "max": 0.551
+     },
+     "refused_at_mib": null
+    },
+    {
+     "pattern": "burst",
+     "delay_s": 2.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 3,
+     "offender_refused": 0,
+     "stopped_after_s": {
+      "n": 3,
+      "min": 0.102,
+      "median": 0.402,
+      "max": 0.903
+     },
+     "refused_at_mib": null
+    },
+    {
+     "pattern": "burst",
+     "delay_s": 5.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 3,
+     "offender_refused": 0,
+     "stopped_after_s": {
+      "n": 3,
+      "min": 0.352,
+      "median": 0.453,
+      "max": 0.953
+     },
+     "refused_at_mib": null
+    },
+    {
+     "pattern": "ramp",
+     "delay_s": 0.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 3,
+     "offender_refused": 2,
+     "stopped_after_s": {
+      "n": 3,
+      "min": 0.508,
+      "median": 0.561,
+      "max": 0.766
+     },
+     "refused_at_mib": {
+      "n": 2,
+      "min": 2816,
+      "median": 2816.0,
+      "max": 2816
+     }
+    },
+    {
+     "pattern": "ramp",
+     "delay_s": 0.5,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 3,
+     "offender_refused": 3,
+     "stopped_after_s": {
+      "n": 3,
+      "min": 0.662,
+      "median": 0.763,
+      "max": 0.814
+     },
+     "refused_at_mib": {
+      "n": 3,
+      "min": 2816,
+      "median": 2816,
+      "max": 2816
+     }
+    },
+    {
+     "pattern": "ramp",
+     "delay_s": 1.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 3,
+     "offender_refused": 0,
+     "stopped_after_s": {
+      "n": 3,
+      "min": 0.355,
+      "median": 0.76,
+      "max": 0.858
+     },
+     "refused_at_mib": null
+    },
+    {
+     "pattern": "ramp",
+     "delay_s": 2.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 3,
+     "offender_refused": 0,
+     "stopped_after_s": {
+      "n": 3,
+      "min": 0.503,
+      "median": 0.709,
+      "max": 1.269
+     },
+     "refused_at_mib": null
+    },
+    {
+     "pattern": "ramp",
+     "delay_s": 5.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 3,
+     "offender_refused": 0,
+     "stopped_after_s": {
+      "n": 3,
+      "min": 0.406,
+      "median": 1.11,
+      "max": 1.116
+     },
+     "refused_at_mib": null
+    }
+   ]
+  },
+  "hami": {
+   "trials": 30,
+   "free_mib": 40725,
+   "request_mib": 18176,
+   "hold_mib": 8960,
+   "over_mib": 9984,
+   "neighbour_oom": 0,
+   "cells": [
+    {
+     "pattern": "burst",
+     "delay_s": 0.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 0,
+     "offender_refused": 3,
+     "stopped_after_s": null,
+     "refused_at_mib": {
+      "n": 3,
+      "min": 0,
+      "median": 0,
+      "max": 0
+     }
+    },
+    {
+     "pattern": "burst",
+     "delay_s": 0.5,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 0,
+     "offender_refused": 3,
+     "stopped_after_s": null,
+     "refused_at_mib": {
+      "n": 3,
+      "min": 0,
+      "median": 0,
+      "max": 0
+     }
+    },
+    {
+     "pattern": "burst",
+     "delay_s": 1.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 0,
+     "offender_refused": 3,
+     "stopped_after_s": null,
+     "refused_at_mib": {
+      "n": 3,
+      "min": 0,
+      "median": 0,
+      "max": 0
+     }
+    },
+    {
+     "pattern": "burst",
+     "delay_s": 2.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 0,
+     "offender_refused": 3,
+     "stopped_after_s": null,
+     "refused_at_mib": {
+      "n": 3,
+      "min": 0,
+      "median": 0,
+      "max": 0
+     }
+    },
+    {
+     "pattern": "burst",
+     "delay_s": 5.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 0,
+     "offender_refused": 3,
+     "stopped_after_s": null,
+     "refused_at_mib": {
+      "n": 3,
+      "min": 0,
+      "median": 0,
+      "max": 0
+     }
+    },
+    {
+     "pattern": "ramp",
+     "delay_s": 0.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 0,
+     "offender_refused": 3,
+     "stopped_after_s": null,
+     "refused_at_mib": {
+      "n": 3,
+      "min": 1280,
+      "median": 1280,
+      "max": 1280
+     }
+    },
+    {
+     "pattern": "ramp",
+     "delay_s": 0.5,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 0,
+     "offender_refused": 3,
+     "stopped_after_s": null,
+     "refused_at_mib": {
+      "n": 3,
+      "min": 1280,
+      "median": 1280,
+      "max": 1280
+     }
+    },
+    {
+     "pattern": "ramp",
+     "delay_s": 1.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 0,
+     "offender_refused": 3,
+     "stopped_after_s": null,
+     "refused_at_mib": {
+      "n": 3,
+      "min": 1280,
+      "median": 1280,
+      "max": 1280
+     }
+    },
+    {
+     "pattern": "ramp",
+     "delay_s": 2.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 0,
+     "offender_refused": 3,
+     "stopped_after_s": null,
+     "refused_at_mib": {
+      "n": 3,
+      "min": 1280,
+      "median": 1280,
+      "max": 1280
+     }
+    },
+    {
+     "pattern": "ramp",
+     "delay_s": 5.0,
+     "trials": 3,
+     "neighbour_oom": 0,
+     "offender_stopped": 0,
+     "offender_refused": 3,
+     "stopped_after_s": null,
+     "refused_at_mib": {
+      "n": 3,
+      "min": 1280,
+      "median": 1280,
+      "max": 1280
+     }
+    }
+   ]
+  }
+ }
+}

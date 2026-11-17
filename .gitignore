@@ -28,3 +28,4 @@ docker-compose.gpu.devices.yml
 # Scratch area: limit-enforcement test jobs and anything else tried by hand.
 # Not part of the software, and not something a checkout should carry.
 temp/
+third_party/

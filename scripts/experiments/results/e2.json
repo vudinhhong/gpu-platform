@@ -1,0 +1,306 @@
+{
+ "e2-users": [
+  {
+   "users": 1,
+   "reps": 3,
+   "start_ready_s": {
+    "median": 2.29,
+    "max": 2.35
+   },
+   "start_failed": 0,
+   "api_ms": {
+    "submit": {
+     "median": 6.6,
+     "p95": 35.7
+    },
+    "list": {
+     "median": 134.9,
+     "p95": 173.2
+    },
+    "queue": {
+     "median": 129.1,
+     "p95": 191.1
+    }
+   },
+   "request_errors": 0,
+   "timeouts": 0,
+   "scheduler_ms_median": 313.6,
+   "scheduler_ms_max": 478.1,
+   "backend_cpu_cores": 0.068,
+   "backend_mem_mib": 99.7,
+   "job_wait_s_median": 6.0
+  },
+  {
+   "users": 2,
+   "reps": 3,
+   "start_ready_s": {
+    "median": 2.35,
+    "max": 2.39
+   },
+   "start_failed": 0,
+   "api_ms": {
+    "submit": {
+     "median": 13.6,
+     "p95": 24.3
+    },
+    "list": {
+     "median": 195.9,
+     "p95": 251.7
+    },
+    "queue": {
+     "median": 184.2,
+     "p95": 217.9
+    }
+   },
+   "request_errors": 0,
+   "timeouts": 0,
+   "scheduler_ms_median": 518.1,
+   "scheduler_ms_max": 859.5,
+   "backend_cpu_cores": 0.127,
+   "backend_mem_mib": 104.6,
+   "job_wait_s_median": 10.0
+  },
+  {
+   "users": 4,
+   "reps": 3,
+   "start_ready_s": {
+    "median": 2.58,
+    "max": 4.79
+   },
+   "start_failed": 0,
+   "api_ms": {
+    "submit": {
+     "median": 23.5,
+     "p95": 46.3
+    },
+    "list": {
+     "median": 308.3,
+     "p95": 449.9
+    },
+    "queue": {
+     "median": 284.2,
+     "p95": 362.5
+    }
+   },
+   "request_errors": 0,
+   "timeouts": 0,
+   "scheduler_ms_median": 979.4,
+   "scheduler_ms_max": 1266.7,
+   "backend_cpu_cores": 0.277,
+   "backend_mem_mib": 118.3,
+   "job_wait_s_median": 12.0
+  },
+  {
+   "users": 8,
+   "reps": 3,
+   "start_ready_s": {
+    "median": 3.83,
+    "max": 7.35
+   },
+   "start_failed": 2,
+   "api_ms": {
+    "submit": {
+     "median": 30.2,
+     "p95": 153.7
+    },
+    "list": {
+     "median": 512.3,
+     "p95": 732.6
+    },
+    "queue": {
+     "median": 502.3,
+     "p95": 689.2
+    }
+   },
+   "request_errors": 24,
+   "timeouts": 0,
+   "scheduler_ms_median": 2022.5,
+   "scheduler_ms_max": 2319.2,
+   "backend_cpu_cores": 0.6,
+   "backend_mem_mib": 156.6,
+   "job_wait_s_median": 11.0
+  },
+  {
+   "users": 16,
+   "reps": 3,
+   "start_ready_s": {
+    "median": 10.49,
+    "max": 12.81
+   },
+   "start_failed": 13,
+   "api_ms": {
+    "submit": {
+     "median": 121.3,
+     "p95": 601.8
+    },
+    "list": {
+     "median": 845.8,
+     "p95": 1590.6
+    },
+    "queue": {
+     "median": 846.0,
+     "p95": 1532.3
+    }
+   },
+   "request_errors": 183,
+   "timeouts": 20,
+   "scheduler_ms_median": 5444.0,
+   "scheduler_ms_max": 54572.7,
+   "backend_cpu_cores": 0.794,
+   "backend_mem_mib": 217.7,
+   "job_wait_s_median": 32.5
+  }
+ ],
+ "e2-users-cached": [
+  {
+   "users": 1,
+   "reps": 3,
+   "start_ready_s": {
+    "median": 2.28,
+    "max": 2.56
+   },
+   "start_failed": 0,
+   "api_ms": {
+    "submit": {
+     "median": 10.3,
+     "p95": 29.0
+    },
+    "list": {
+     "median": 67.2,
+     "p95": 106.7
+    },
+    "queue": {
+     "median": 61.6,
+     "p95": 69.7
+    }
+   },
+   "request_errors": 0,
+   "timeouts": 0,
+   "scheduler_ms_median": 257.9,
+   "scheduler_ms_max": 305.3,
+   "backend_cpu_cores": 0.067,
+   "backend_mem_mib": 165.8,
+   "job_wait_s_median": 5.0
+  },
+  {
+   "users": 2,
+   "reps": 3,
+   "start_ready_s": {
+    "median": 2.33,
+    "max": 2.37
+   },
+   "start_failed": 0,
+   "api_ms": {
+    "submit": {
+     "median": 22.2,
+     "p95": 52.4
+    },
+    "list": {
+     "median": 90.9,
+     "p95": 155.9
+    },
+    "queue": {
+     "median": 81.4,
+     "p95": 101.9
+    }
+   },
+   "request_errors": 0,
+   "timeouts": 0,
+   "scheduler_ms_median": 450.4,
+   "scheduler_ms_max": 504.6,
+   "backend_cpu_cores": 0.135,
+   "backend_mem_mib": 172.0,
+   "job_wait_s_median": 5.5
+  },
+  {
+   "users": 4,
+   "reps": 3,
+   "start_ready_s": {
+    "median": 2.52,
+    "max": 2.58
+   },
+   "start_failed": 0,
+   "api_ms": {
+    "submit": {
+     "median": 22.6,
+     "p95": 106.5
+    },
+    "list": {
+     "median": 101.6,
+     "p95": 199.4
+    },
+    "queue": {
+     "median": 93.3,
+     "p95": 137.3
+    }
+   },
+   "request_errors": 0,
+   "timeouts": 0,
+   "scheduler_ms_median": 864.4,
+   "scheduler_ms_max": 1154.2,
+   "backend_cpu_cores": 0.265,
+   "backend_mem_mib": 192.9,
+   "job_wait_s_median": 9.0
+  },
+  {
+   "users": 8,
+   "reps": 3,
+   "start_ready_s": {
+    "median": 3.03,
+    "max": 3.13
+   },
+   "start_failed": 0,
+   "api_ms": {
+    "submit": {
+     "median": 31.5,
+     "p95": 259.9
+    },
+    "list": {
+     "median": 109.3,
+     "p95": 338.2
+    },
+    "queue": {
+     "median": 101.5,
+     "p95": 244.7
+    }
+   },
+   "request_errors": 0,
+   "timeouts": 0,
+   "scheduler_ms_median": 1634.6,
+   "scheduler_ms_max": 1915.2,
+   "backend_cpu_cores": 0.55,
+   "backend_mem_mib": 236.0,
+   "job_wait_s_median": 10.0
+  },
+  {
+   "users": 16,
+   "reps": 3,
+   "start_ready_s": {
+    "median": 4.37,
+    "max": 5.45
+   },
+   "start_failed": 0,
+   "api_ms": {
+    "submit": {
+     "median": 133.6,
+     "p95": 819.1
+    },
+    "list": {
+     "median": 133.8,
+     "p95": 739.5
+    },
+    "queue": {
+     "median": 126.1,
+     "p95": 643.7
+    }
+   },
+   "request_errors": 0,
+   "timeouts": 0,
+   "scheduler_ms_median": 3599.8,
+   "scheduler_ms_max": 4296.0,
+   "backend_cpu_cores": 1.333,
+   "backend_mem_mib": 331.1,
+   "job_wait_s_median": 18.5
+  }
+ ]
+}

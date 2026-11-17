@@ -1,0 +1,7 @@
+[
+ {"id": "dev-rebuild-1", "gpus": [], "min_disk_gib": 8, "timeout_min": 30, "max_attempts": 5,
+  "cmd": ["bash", "scripts/experiments/rebuild_dev.sh"]},
+ {"id": "e2-phases", "gpus": [], "min_disk_gib": 8, "timeout_min": 60, "max_attempts": 20,
+  "cmd": ["python3", "-u", "scripts/experiments/e2_users.py", "--levels", "8,16", "--reps", "1"],
+  "cleanup": ["bash", "scripts/experiments/e2_cleanup.sh"]}
+]

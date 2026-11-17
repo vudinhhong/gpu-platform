@@ -76,6 +76,12 @@ export const loginRequest = (username, password) => {
 
 export const logoutRequest = () => api.post('/auth/logout')
 
+/** Whether sign-in through an identity provider is offered: {enabled, label}. */
+export const oidcConfigRequest = () => api.get('/auth/oidc/config')
+
+/** Trade the hand-off token the provider's callback left in the URL for a session. */
+export const oidcExchangeRequest = (token) => api.post('/auth/oidc/exchange', { token })
+
 /**
  * Change the signed-in user's password.
  *
@@ -207,6 +213,13 @@ export const getGPUAssignments    = ()         => api.get('/admin/gpu/assignment
 export const createGPUAssignment  = (data)     => api.post('/admin/gpu/assignments', data)
 export const updateGPUAssignment  = (id, data) => api.put(`/admin/gpu/assignments/${id}`, data)
 export const deleteGPUAssignment  = (id)       => api.delete(`/admin/gpu/assignments/${id}`)
+
+// Nodes: other machines that have joined this one (docs/multi-node.md).
+export const getNodes        = ()     => api.get('/admin/nodes')
+export const createJoinToken = (site) => api.post('/admin/nodes/join-tokens', { site })
+export const drainNode       = (id)   => api.post(`/admin/nodes/${id}/drain`)
+export const resumeNode      = (id)   => api.post(`/admin/nodes/${id}/resume`)
+export const removeNode      = (id)   => api.delete(`/admin/nodes/${id}`)
 
 // ---------------------------------------------------------------------------
 // Admin: Jupyter sessions

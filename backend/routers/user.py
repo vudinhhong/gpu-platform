@@ -28,6 +28,7 @@ from services import (
     jobs as job_service,
     gpu_monitor,
     metrics,
+    nodes,
     quota,
     session_backend,
     usage,
@@ -386,12 +387,42 @@ def jupyter_start(
 
     requested_image = (payload or {}).get("image") or current_user.preferred_image
 
+    # Committed now, before any Docker call: what follows can take seconds,
+    # and an open write transaction held that long locks the database for
+    # every other request.  Sixteen accounts starting at once got "database
+    # is locked" back on some of the starts.  Every failure below sets the
+    # row's status itself.
+    db.commit()
+
     # No image, no workspace.  This used to fall back to a second backend that
     # ran Jupyter as a subprocess beside every other user's, which turned a
     # missing image into a silent loss of isolation; it is gone.  ./deploy.sh
     # builds the image, so say what is wrong and let an administrator fix it.
+    # The admin's assignment says which node the GPUs are on; no assignment,
+    # or one without a node, is the master.
+    node_id = getattr(current_user.gpu_assignment, "node_id", None)
+    if node_id is not None:
+        node = db.query(models.Node).filter(models.Node.id == node_id).first()
+        if node is None or node.is_local:
+            node_id = None
+        elif not nodes.is_ready(node):
+            session.status = models.SessionStatus.stopped
+            db.add(session)
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"The machine your workspace runs on ({node.name}) is not "
+                       "available at the moment. Please try again later or contact "
+                       "an administrator.",
+            )
+
     chosen_image = container_manager.resolve_image(requested_image)
-    if not container_manager.image_exists(chosen_image):
+    try:
+        image_ok = session_backend.image_available(chosen_image, node_id)
+    except nodes.NodeError as exc:
+        logger.error("Image check on node %s failed: %s", node_id, exc)
+        image_ok = False
+    if not image_ok:
         logger.error(
             "Workspace image %s is missing, refusing to start a workspace for %r. "
             "Run ./deploy.sh to build it.",
@@ -448,6 +479,7 @@ def jupyter_start(
             reserved_ssh_ports=reserved_ports,
             preferred_ssh_port=session.ssh_port,
             user=current_user,
+            node_id=node_id,
         )
     except Exception as exc:  # noqa: BLE001
         session.status = models.SessionStatus.error
@@ -477,6 +509,7 @@ def jupyter_start(
         )
 
     session.container_id = handle.get("container_id")
+    session.node_id = node_id
     session.port = handle.get("port", port)
     session.image = handle.get("image")
     session.ssh_port = handle.get("ssh_port")
@@ -484,10 +517,8 @@ def jupyter_start(
 
     # Wait until Jupyter actually answers so the UI can truthfully say
     # "Running".  This blocks only this worker thread.
-    ready = container_manager.wait_until_running(
-        container_manager.container_name(current_user.username),
-        base_url=session.base_url,
-        token=token,
+    ready = session_backend.wait_for_ready(
+        current_user.username, base_url=session.base_url, token=token, node_id=node_id,
     )
     if not ready:
         # Keep the startup output for whoever has to diagnose it, but do
@@ -496,9 +527,8 @@ def jupyter_start(
         logger.error(
             "Workspace for %r did not become ready. Startup output:\n%s",
             current_user.username,
-            container_manager.get_container_logs(
-                container_manager.container_name(current_user.username), tail=30
-            ) or "(none)",
+            session_backend.get_logs(current_user.username, tail=30, node_id=node_id)
+            or "(none)",
         )
         session.status = models.SessionStatus.error
         db.add(session)
@@ -612,7 +642,9 @@ def ssh_info(
     )
     return {
         "enabled": True,
-        "host": None,  # the UI fills in window.location.hostname
+        # None: the UI fills in window.location.hostname.  A workspace on
+        # another node is reached on that node's address instead.
+        "host": session_backend.ssh_host(current_user.username),
         "port": session.ssh_port,
         "username": current_user.username,
         "uses_account_password": uses_account_password,

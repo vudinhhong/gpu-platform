@@ -16,10 +16,58 @@ class Settings(BaseSettings):
     # deployments; deploy.sh sets it True whenever TLS terminates upstream.
     COOKIE_SECURE: bool = False
 
+    # Sign-in through an OpenID Connect provider (services/oidc.py), off
+    # while OIDC_CLIENT_ID is empty.  It only signs in accounts that already
+    # exist: the provider's verified email must equal an account's email.
+    # Passwords keep working beside it.  OIDC_REDIRECT_URL is this
+    # installation's /api/auth/oidc/callback as registered with the provider.
+    OIDC_ISSUER: str = "https://accounts.google.com"
+    OIDC_CLIENT_ID: str = ""
+    OIDC_CLIENT_SECRET: str = ""
+    OIDC_REDIRECT_URL: str = ""
+    OIDC_LABEL: str = "Google"
+    # Comma-separated email domains allowed to sign in this way; empty
+    # allows any domain (an account with the email still has to exist).
+    OIDC_ALLOWED_DOMAINS: str = ""
+
     # Login throttling (services.ratelimit)
     LOGIN_MAX_FAILURES: int = 8
     LOGIN_FAIL_WINDOW_SECONDS: int = 300
     LOGIN_LOCKOUT_SECONDS: int = 900
+
+    # Name of this installation when more than one shares a Docker daemon (a
+    # test stack beside production).  It goes into every container name and
+    # label, so each installation sees, reconciles and removes only its own
+    # containers.  Empty keeps the original names: gpu-jupyter-<user>,
+    # gpu-job-<id>, gpu-platform.* labels.
+    INSTANCE_NAME: str = ""
+
+    # ── Several nodes (docs/multi-node.md) ──────────────────────────────
+    # "master" holds the database, queue and web interface and is a node for
+    # its own GPUs; "node" runs only the agent, which joins a master and does
+    # what it is told with this machine's GPUs and containers.
+    ROLE: str = "master"
+    # This machine's name among the nodes; empty = the host name.
+    NODE_NAME: str = ""
+    # Nodes of one site share a LAN and an NFS export of the homes; a user's
+    # work is placed only on nodes of their site.
+    NODE_SITE: str = "default"
+    # GPU indices of this machine the node offers; empty = all.  Lets one host
+    # stand in for several nodes in a test, each with its own cards.
+    NODE_GPUS: str = ""
+    # Node side: where the master is, the one-time token to join with, where
+    # the credential it receives is kept, and the address the master should
+    # use to reach this node's data port (Jupyter traffic).
+    MASTER_URL: str = ""
+    JOIN_TOKEN: str = ""
+    NODE_CREDENTIAL_FILE: str = "./data/node.json"
+    NODE_DATA_URL: str = ""
+    NODE_HEARTBEAT_SECONDS: float = 2.0
+    # Master side: a node not heard from for this long gets no new work.
+    NODE_STALE_SECONDS: int = 60
+    # How long the master waits for a node to answer a command.
+    NODE_COMMAND_TIMEOUT_SECONDS: int = 120
+    JOIN_TOKEN_TTL_SECONDS: int = 3600
 
     # Database – SQLite by default; swap for PostgreSQL in production
     DATABASE_URL: str = "sqlite:///./data/gpu_platform.db"
@@ -167,6 +215,9 @@ class Settings(BaseSettings):
     # the scheduler above because it is far cheaper: one nvidia-smi covers
     # every job, so the window a job can overrun in is a second, not ten.
     GPU_GUARD_INTERVAL: float = 1.0
+    # Log how long each background loop iteration took.  Off normally; on for
+    # measuring the control plane under load (scripts/experiments/e2_users.py).
+    LOOP_TIMING_LOG: bool = False
     # Jobs one user may have running at once.  The queue exists to share GPUs;
     # without this a single user's backlog would occupy every card.
     JOB_MAX_RUNNING_PER_USER: int = 2
@@ -215,6 +266,22 @@ class Settings(BaseSettings):
     # "stop" enforces as described; "warn" only records it on the job, which
     # leaves reservations advisory.
     JOB_GPU_OVERRUN_ACTION: str = "stop"
+    # Refuse the allocation itself instead of stopping the job afterwards.
+    # HAMi-core (scripts/hami/build_hami.sh) is loaded into every process of a
+    # job container through a read-only /etc/ld.so.preload, and fails a
+    # cudaMalloc that would take a card past the job's allowance; the job
+    # then sees an ordinary CUDA out-of-memory error and its neighbour is
+    # never touched.  The limit comes from a root-owned, read-only file that
+    # HAMi-core lets override the environment, so a user cannot raise it by
+    # setting a variable.  It is not a security boundary: a statically linked
+    # binary or direct driver ioctls bypass any interposition library, which
+    # is why the after-the-fact check above stays on.  OFF by default; a build
+    # made for another driver version is refused (see hami_status()).
+    GPU_HARD_VRAM_LIMIT: bool = False
+    # The build as the backend sees it, and the same directory on the Docker
+    # host (bind mounts are resolved there, as with JUPYTER_DATA_HOST_DIR).
+    HAMI_DIR: str = "/app/data/hami"
+    HAMI_HOST_DIR: str = ""
     JOB_OUTPUT_WARN_MB: int = 512
     # A hard ceiling that DOES stop the job.  0 = never; set it only if a
     # runaway log filling the disk is the bigger risk.

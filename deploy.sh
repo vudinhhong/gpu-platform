@@ -1,7 +1,43 @@
 #!/bin/bash
 set -euo pipefail
 
+usage() {
+    cat <<'EOF'
+Usage:
+  ./deploy.sh                              install or update a master
+  ./deploy.sh --join MASTER_URL TOKEN      install this machine as a node of MASTER_URL
+              [--nfs SERVER:/path]         ...with the users' homes mounted from SERVER
+
+TOKEN comes from Admin -> Nodes -> "Add a node" on the master.  It is good for
+one machine and one hour.  --nfs mounts the master's jupyter_data export here,
+so a workspace sees the same files whichever machine runs it (docs/multi-node.md).
+EOF
+}
+
+JOIN_MASTER=""
+JOIN_TOKEN_ARG=""
+NFS_SOURCE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --join)
+            [ $# -ge 3 ] || { usage; exit 2; }
+            JOIN_MASTER="${2%/}"; JOIN_TOKEN_ARG="$3"; shift 3 ;;
+        --nfs)
+            [ $# -ge 2 ] || { usage; exit 2; }
+            NFS_SOURCE="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown argument: $1" >&2; usage; exit 2 ;;
+    esac
+done
+
+# A node is told so once, at --join, and remembers it in .env.
+IS_NODE=false
+if [ -n "$JOIN_MASTER" ] || grep -qE '^ROLE=node' .env 2>/dev/null; then
+    IS_NODE=true
+fi
+
 echo "=== GPU Platform Deployment ==="
+[ "$IS_NODE" = "true" ] && echo "    (node of ${JOIN_MASTER:-$(grep -E '^MASTER_URL=' .env | cut -d= -f2-)})"
 
 # ── Prerequisite checks ───────────────────────────────────────────────────────
 
@@ -99,6 +135,40 @@ fi
 WEB_PORT="${WEB_PORT:-7080}"
 WEB_BIND="${WEB_BIND:-127.0.0.1}"
 
+# ── Shared homes (node only) ─────────────────────────────────────────────────
+# A workspace has to find the same files on whichever machine runs it, so a
+# node mounts the master's jupyter_data at its own ./jupyter_data.  Within a
+# LAN that is NFS; across sites, each site keeps its own homes and users stay
+# on the nodes of their site.
+
+if [ -n "$NFS_SOURCE" ]; then
+    echo ""
+    echo "Shared homes: $NFS_SOURCE -> $(pwd)/jupyter_data"
+    mkdir -p jupyter_data
+    if mountpoint -q jupyter_data; then
+        echo "  already mounted ✓"
+    elif [ "$(id -u)" -ne 0 ]; then
+        echo "ERROR: mounting needs root.  Either rerun with sudo, or mount it yourself:"
+        echo "    sudo apt install nfs-common"
+        echo "    echo '$NFS_SOURCE $(pwd)/jupyter_data nfs4 defaults,_netdev,hard 0 0' | sudo tee -a /etc/fstab"
+        echo "    sudo mount $(pwd)/jupyter_data"
+        echo "and run ./deploy.sh again without --nfs."
+        exit 1
+    else
+        command -v mount.nfs4 >/dev/null 2>&1 || command -v mount.nfs >/dev/null 2>&1 || {
+            echo "ERROR: no NFS client here (apt install nfs-common)."; exit 1; }
+        grep -qF " $(pwd)/jupyter_data " /etc/fstab \
+            || echo "$NFS_SOURCE $(pwd)/jupyter_data nfs4 defaults,_netdev,hard 0 0" >> /etc/fstab
+        mount "$(pwd)/jupyter_data"
+        echo "  mounted ✓ (and added to /etc/fstab)"
+    fi
+elif [ "$IS_NODE" = "true" ] && ! mountpoint -q jupyter_data 2>/dev/null; then
+    echo ""
+    echo "  ⚠  jupyter_data is not a mount.  Workspaces started here will not see"
+    echo "     the files users have on the master unless this directory is shared"
+    echo "     storage (see --nfs, docs/multi-node.md)."
+fi
+
 # ── Directory setup ───────────────────────────────────────────────────────────
 
 echo ""
@@ -113,7 +183,9 @@ echo "  nginx/ssl/    ✓"
 COMPOSE_ARGS=(-f docker-compose.yml)
 [ "$HOST_GPU" = "true" ] && COMPOSE_ARGS+=(-f docker-compose.gpu.yml)
 [ "$MAP_HOMES" = "true" ] && COMPOSE_ARGS+=(-f docker-compose.homes.yml)
-if [ "$HTTP_MODE" = "host" ]; then
+if [ "$IS_NODE" = "true" ]; then
+    COMPOSE_ARGS+=(-f docker-compose.node.yml)
+elif [ "$HTTP_MODE" = "host" ]; then
     COMPOSE_ARGS+=(-f docker-compose.host.yml)
 else
     COMPOSE_ARGS+=(--profile edge)
@@ -204,6 +276,8 @@ GPU_COUNT=2
 CPU_ONLY=$CPU_ONLY_MARK
 JUPYTER_DATA_DIR=/jupyter_data
 JUPYTER_DATA_HOST_DIR=$(pwd)/jupyter_data
+# This machine's name among the nodes (docs/multi-node.md).
+NODE_NAME=$(hostname -s)
 # SSH accepts keys only.  Users add a key on their profile page; set true to
 # let them log in with their password too (sshd is not covered by the
 # platform's login throttling).
@@ -212,8 +286,10 @@ ENVEOF
 
     echo "  .env created (HTTP_MODE=$HTTP_MODE)."
     [ "$CPU_ONLY_MARK" = "true" ] && echo "  CPU_ONLY=true recorded: no GPU here, workspaces are CPU containers."
-    echo ""
-    echo "  Initial admin password: $ADMIN_PASSWORD  (also in .env as ADMIN_PASSWORD)"
+    if [ "$IS_NODE" != "true" ]; then
+        echo ""
+        echo "  Initial admin password: $ADMIN_PASSWORD  (also in .env as ADMIN_PASSWORD)"
+    fi
 else
     echo ""
     echo ".env already exists, reconciling with this host..."
@@ -258,6 +334,8 @@ else
         echo "  → JUPYTER_DATA_HOST_DIR: '$CURRENT_DATA_DIR' → '$(pwd)/jupyter_data'"
     fi
     set_env_var JUPYTER_DATA_HOST_DIR "$(pwd)/jupyter_data"
+    # Name the machine among the nodes, once; an administrator may rename it.
+    grep -qE '^NODE_NAME=' .env || printf 'NODE_NAME=%s\n' "$(hostname -s)" >> .env
     set_env_var HTTP_MODE "$HTTP_MODE"
     set_env_var WEB_BIND "$WEB_BIND"
     set_env_var WEB_PORT "$WEB_PORT"
@@ -313,6 +391,30 @@ else
     fi
 fi
 
+if [ -n "$JOIN_MASTER" ]; then
+    # --join with a new token means joining afresh, perhaps a different master:
+    # an old credential would otherwise win and the token go unused.
+    if [ -f data/node.json ]; then
+        mv data/node.json "data/node.json.$(date +%Y%m%d-%H%M%S).old"
+        echo "  previous node credential set aside (data/node.json.*.old)"
+    fi
+    # Where the master reaches this machine's data port: its first address,
+    # unless NODE_DATA_URL says otherwise (a second NIC, a name in DNS).
+    NODE_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+    DATA_URL="${NODE_DATA_URL:-http://${NODE_IP:-127.0.0.1}:${NODE_DATA_PORT:-8100}}"
+    set_env_var ROLE node
+    set_env_var MASTER_URL "$JOIN_MASTER"
+    set_env_var JOIN_TOKEN "$JOIN_TOKEN_ARG"
+    set_env_var NODE_DATA_URL "$DATA_URL"
+    # A node has no accounts; the generated admin password means nothing here.
+    sed -i.bak '/^ADMIN_PASSWORD=/d' .env && rm -f .env.bak
+    echo "  node settings ✓ (master $JOIN_MASTER, data port $DATA_URL)"
+    if ! curl -sf -m 5 "$JOIN_MASTER/api/health" >/dev/null 2>&1; then
+        echo "  ⚠  $JOIN_MASTER/api/health does not answer from here; the node will"
+        echo "     keep trying, but check the address and the firewall."
+    fi
+fi
+
 # ── Host GPU setup (persistence mode, keep-alive, prevents GPU detach) ──────
 
 if [ "$HOST_GPU" = "true" ]; then
@@ -359,6 +461,36 @@ if docker build --pull -f backend/jupyter.Dockerfile -t gpu-jupyter:candidate ba
     fi
 else
     echo "WARNING: image build failed, user sessions will fall back to the process backend."
+fi
+
+# ── Hard GPU memory limit (HAMi-core), only when asked for ──────────────────
+# GPU_HARD_VRAM_LIMIT=true in .env is the whole of what an administrator does.
+# The library is built for this host's driver when there is none or the driver
+# has changed, then verified on a GPU here (scripts/hami/verify.py); the
+# backend applies limits only with a build verified for the running driver,
+# and otherwise keeps stopping jobs after the fact, as without the option.
+
+HARD_VRAM="$(grep -E '^GPU_HARD_VRAM_LIMIT=' .env 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+if [ "$HOST_GPU" = "true" ] && [ "$HARD_VRAM" = "true" ]; then
+    echo ""
+    echo "Hard GPU memory limit (GPU_HARD_VRAM_LIMIT=true)..."
+    set_env_var HAMI_HOST_DIR "$(pwd)/data/hami"
+    DRIVER_NOW="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)"
+    DRIVER_BUILT="$(grep -o '"driver": "[^"]*"' data/hami/build-info.json 2>/dev/null | cut -d'"' -f4 || true)"
+    if [ ! -f data/hami/libvgpu.so ] || [ "$DRIVER_BUILT" != "$DRIVER_NOW" ]; then
+        echo "  building HAMi-core for driver $DRIVER_NOW (first time or driver changed)..."
+        REMOVE_BUILD_IMAGE=1 bash scripts/hami/build_hami.sh \
+            || echo "  ⚠  build failed; jobs keep the after-the-fact check only."
+    fi
+    if [ -f data/hami/libvgpu.so ]; then
+        if python3 scripts/hami/verify.py --image gpu-jupyter:latest >/dev/null; then
+            echo "  hard limit ✓ (an allocation past the limit was refused on this GPU)"
+        else
+            echo "  ⚠  the build did not enforce a limit on this host; it will not be used."
+            echo "     Jobs keep the after-the-fact check.  Details:"
+            echo "       python3 scripts/hami/verify.py"
+        fi
+    fi
 fi
 
 # ── Snapshot, so a bad deployment can be walked back ─────────────────────────
@@ -413,6 +545,31 @@ done
 
 echo ""
 echo "Starting services (${COMPOSE_ARGS[*]})..."
+if [ "$IS_NODE" = "true" ]; then
+    docker compose "${COMPOSE_ARGS[@]}" up -d --build backend
+    echo ""
+    echo "Joining the master..."
+    JOINED=false
+    for _ in $(seq 1 30); do
+        if [ -f data/node.json ]; then
+            JOINED=true
+            break
+        fi
+        sleep 2
+    done
+    if [ "$JOINED" = "true" ]; then
+        # The token is spent; what proves this node from now on is data/node.json.
+        sed -i.bak '/^JOIN_TOKEN=/d' .env && rm -f .env.bak
+        echo "  joined ✓ ($(grep -o '"site": "[^"]*"' data/node.json | cut -d'"' -f4) site)"
+        echo ""
+        echo "  On the master, assign this node's GPUs to users under Admin -> Nodes."
+    else
+        echo "  ✗ not joined yet.  The agent's own account of why:"
+        docker compose "${COMPOSE_ARGS[@]}" logs --tail 20 backend | sed 's/^/    /'
+        echo "  A spent or expired token needs a new one from the master; rerun with it."
+    fi
+    exit 0
+fi
 docker compose "${COMPOSE_ARGS[@]}" up -d --build
 
 # ── Post-start reachability check ────────────────────────────────────────────

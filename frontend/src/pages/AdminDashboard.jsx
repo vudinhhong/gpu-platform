@@ -12,8 +12,10 @@ import {
   getGPUStatus,
   getJupyterSessions,
   stopUserJupyter,
+  getNodes,
 } from '../api/index.js'
 import Navbar from '../components/Navbar.jsx'
+import NodesTab from '../components/NodesTab.jsx'
 import { ResourcesTab, UsageTab, AuditTab, JobsTab, TrashTab } from '../components/AdminPanels.jsx'
 import { useConfirm } from '../components/ConfirmDialog.jsx'
 
@@ -189,7 +191,7 @@ function UsersTab({ showToast }) {
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
         {loading ? (
           <div className="p-8 text-center text-gray-400"><Spinner className="w-6 h-6" /></div>
         ) : (
@@ -478,6 +480,7 @@ function AssignmentsTab({ showToast }) {
   const [users, setUsers] = useState([])
   const [assignments, setAssignments] = useState([])
   const [gpuCount, setGpuCount] = useState(2)
+  const [nodes, setNodes] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null)    // 'create' | {type:'edit', assignment}
   const [busy, setBusy] = useState(false)
@@ -485,13 +488,17 @@ function AssignmentsTab({ showToast }) {
   const [confirmDialog, confirm] = useConfirm()
 
   const userById = Object.fromEntries(users.map((u) => [u.id, u]))
+  const nodeById = Object.fromEntries(nodes.map((n) => [n.id, n]))
 
   const load = useCallback(async () => {
     try {
-      const [uRes, aRes, gRes] = await Promise.all([getAdminUsers(), getGPUAssignments(), getGPUStatus()])
+      const [uRes, aRes, gRes, nRes] = await Promise.all([
+        getAdminUsers(), getGPUAssignments(), getGPUStatus(), getNodes().catch(() => ({ data: [] })),
+      ])
       setUsers(uRes.data)
       setAssignments(aRes.data)
       setGpuCount(Math.max(gRes.data.length, 1))
+      setNodes(nRes.data)
     } catch (err) {
       showToast(ApiError(err, 'Could not load assignments.'), 'error')
     } finally {
@@ -562,7 +569,7 @@ function AssignmentsTab({ showToast }) {
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
         {loading ? (
           <div className="p-8 text-center text-gray-400"><Spinner className="w-6 h-6" /></div>
         ) : (
@@ -582,7 +589,10 @@ function AssignmentsTab({ showToast }) {
                     {userById[a.user_id]?.username ?? `user #${a.user_id}`}
                   </td>
                   <td className="px-5 py-3.5">
-                    <div className="flex space-x-1.5">
+                    <div className="flex items-center space-x-1.5">
+                      {a.node_id && nodeById[a.node_id] && !nodeById[a.node_id].is_local && (
+                        <span className="text-xs text-gray-500 mr-1">{nodeById[a.node_id].name}</span>
+                      )}
                       {a.gpu_indices.length === 0
                         ? <span className="text-xs text-gray-400">No GPU, limits only</span>
                         : a.gpu_indices.map((idx) => (
@@ -594,6 +604,7 @@ function AssignmentsTab({ showToast }) {
                     {a.memory_limit_mb ? `${a.memory_limit_mb} MB` : '—'}
                     {a.cpu_cores ? ` · ${a.cpu_cores} cores` : ''}
                     {a.max_processes ? ` · ${a.max_processes} processes` : ''}
+                    {a.gpu_memory_limit_mb ? ` · ${a.gpu_memory_limit_mb} MiB VRAM per GPU` : ''}
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center justify-end space-x-1">
@@ -621,6 +632,7 @@ function AssignmentsTab({ showToast }) {
             users={users}
             assignment={modal === 'create' ? null : modal.assignment}
             gpuCount={gpuCount}
+            nodes={nodes}
             busy={busy}
             error={formError}
             onCancel={() => setModal(null)}
@@ -633,7 +645,15 @@ function AssignmentsTab({ showToast }) {
   )
 }
 
-function AssignmentForm({ users, assignment, gpuCount, busy, error, onCancel, onSubmit }) {
+// GPU indices a machine offers: the master's from its own count, another
+// node's from what it reported.
+function nodeGpuIndices(node, gpuCount) {
+  if (!node || node.is_local) return Array.from({ length: gpuCount }, (_, i) => i)
+  const gpus = node.gpus || node.inventory?.gpus || []
+  return gpus.map((g) => g.index).sort((a, b) => a - b)
+}
+
+function AssignmentForm({ users, assignment, gpuCount, nodes = [], busy, error, onCancel, onSubmit }) {
   const isEdit = Boolean(assignment)
   const assignableUsers = isEdit
     ? users
@@ -644,6 +664,18 @@ function AssignmentForm({ users, assignment, gpuCount, busy, error, onCancel, on
   const [memLimit, setMemLimit]     = useState(assignment?.memory_limit_mb ?? '')
   const [cpuCores, setCpuCores]     = useState(assignment?.cpu_cores ?? '')
   const [maxProcs, setMaxProcs]     = useState(assignment?.max_processes ?? '')
+  const [vramLimit, setVramLimit]   = useState(assignment?.gpu_memory_limit_mb ?? '')
+  const [nodeId, setNodeId]         = useState(assignment?.node_id ?? '')
+
+  const otherNodes = nodes.filter((n) => !n.is_local)
+  const node = nodes.find((n) => n.id === Number(nodeId))
+  const indices = nodeGpuIndices(node, gpuCount)
+
+  const pickNode = (value) => {
+    setNodeId(value)
+    // GPU 0 of one machine is not GPU 0 of another.
+    setChecked(new Set())
+  }
 
   const toggle = (idx) => {
     setChecked((prev) => {
@@ -668,6 +700,8 @@ function AssignmentForm({ users, assignment, gpuCount, busy, error, onCancel, on
       memory_limit_mb: memLimit === '' ? null : Number(memLimit),
       cpu_cores: cpuCores === '' ? null : Number(cpuCores),
       max_processes: maxProcs === '' ? null : Number(maxProcs),
+      gpu_memory_limit_mb: vramLimit === '' ? null : Number(vramLimit),
+      node_id: nodeId === '' ? null : Number(nodeId),
     }
     if (!isEdit) payload.user_id = Number(userId)
     onSubmit(payload)
@@ -688,12 +722,28 @@ function AssignmentForm({ users, assignment, gpuCount, busy, error, onCancel, on
         </Field>
       )}
 
+      {otherNodes.length > 0 && (
+        <Field label="Machine">
+          <select className="form-input" value={nodeId} onChange={(e) => pickNode(e.target.value)}>
+            <option value="">{nodes.find((n) => n.is_local)?.name ?? 'This machine'} (master)</option>
+            {otherNodes.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.name}{n.site !== 'default' ? ` · ${n.site}` : ''}{n.ready ? '' : ' (not available)'}
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-gray-400 mt-1">
+            The workspace runs on the machine its GPUs are in.
+          </p>
+        </Field>
+      )}
+
       <Field label="GPUs (optional)">
         {/* Wrapping buttons of a fixed width rather than a grid: a grid
             stretches two cards across the whole row on a two-GPU host, and
             squeezes eight into slivers on a full one. */}
         <div className="flex flex-wrap gap-2">
-          {Array.from({ length: gpuCount }, (_, i) => (
+          {indices.map((i) => (
             <button
               key={i}
               type="button"
@@ -707,6 +757,9 @@ function AssignmentForm({ users, assignment, gpuCount, busy, error, onCancel, on
               {i}
             </button>
           ))}
+          {indices.length === 0 && (
+            <span className="text-xs text-gray-400">This machine reports no GPU.</span>
+          )}
         </div>
         <p className="text-[11px] text-gray-400 mt-1">
           {checked.size === 0
@@ -738,6 +791,16 @@ function AssignmentForm({ users, assignment, gpuCount, busy, error, onCancel, on
           </p>
         </Field>
       </div>
+      {checked.size > 0 && (
+        <Field label="GPU memory per GPU (MiB, optional)">
+          <input className="form-input" type="number" min={1024} value={vramLimit}
+                 onChange={(e) => setVramLimit(e.target.value)} placeholder="whole card" />
+          <p className="text-[11px] text-gray-400 mt-1">
+            Allocations past this fail with an ordinary CUDA out-of-memory error. Applied only
+            when the platform runs with GPU_HARD_VRAM_LIMIT; blank = the whole card.
+          </p>
+        </Field>
+      )}
       <p className="text-xs text-gray-400">
         Every field here is optional, but fill in at least one. A blank field falls back to
         the platform default, and clearing a field on an existing assignment removes that
@@ -827,7 +890,7 @@ function SessionsTab({ showToast }) {
     <div className="space-y-4">
       <h2 className="text-base font-semibold text-gray-900">Jupyter Sessions ({sessions.length})</h2>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
         {loading ? (
           <div className="p-8 text-center text-gray-400"><Spinner className="w-6 h-6" /></div>
         ) : (
@@ -889,6 +952,7 @@ const TABS = [
   { key: 'resources',   label: 'Resources' },
   { key: 'users',       label: 'Users' },
   { key: 'assignments', label: 'Assignments' },
+  { key: 'nodes',       label: 'Nodes' },
   { key: 'sessions',    label: 'Jupyter Sessions' },
   { key: 'jobs',        label: 'Job Queue' },
   { key: 'usage',       label: 'Usage' },
@@ -911,13 +975,21 @@ export default function AdminDashboard() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Admin Panel</h1>
 
-        {/* Tabs */}
-        <div className="flex space-x-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">
+        {/* Tabs: nine of them do not fit a phone, so there it is a select. */}
+        <select
+          value={tab}
+          onChange={(e) => setTab(e.target.value)}
+          aria-label="Section"
+          className="sm:hidden w-full mb-6 px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          {TABS.map(({ key, label }) => <option key={key} value={key}>{label}</option>)}
+        </select>
+        <div className="hidden sm:flex space-x-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit max-w-full overflow-x-auto">
           {TABS.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setTab(key)}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              className={`flex-shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
                 tab === key
                   ? 'bg-white text-indigo-700 shadow-sm'
                   : 'text-gray-500 hover:text-gray-800'
@@ -931,6 +1003,7 @@ export default function AdminDashboard() {
         {tab === 'resources'   && <ResourcesTab />}
         {tab === 'users'       && <UsersTab showToast={showToast} />}
         {tab === 'assignments' && <AssignmentsTab showToast={showToast} />}
+        {tab === 'nodes'       && <NodesTab showToast={showToast} />}
         {tab === 'sessions'    && <SessionsTab showToast={showToast} />}
         {tab === 'jobs'        && <JobsTab />}
         {tab === 'usage'       && <UsageTab />}

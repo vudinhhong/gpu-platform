@@ -1,0 +1,24 @@
+{
+ "computed": "2026-11-08T16:36:04+08:00",
+ "first": "2026-10-23T12:21:40+08:00",
+ "last": "2026-11-08T16:36:00+08:00",
+ "samples": 23223,
+ "active_sm_threshold": 5,
+ "workspaces": {
+  "user1": {
+   "gpu_hours_assigned": 774.1,
+   "share_holding_memory": 0.208,
+   "share_active": 0.185,
+   "median_held_mib": 0.0
+  }
+ },
+ "all_workspaces": {
+  "gpu_hours_assigned": 774.1,
+  "share_holding_memory": 0.208,
+  "share_active": 0.185
+ },
+ "outside_platform_mib": {
+  "median": 46182,
+  "max": 89734
+ }
+}

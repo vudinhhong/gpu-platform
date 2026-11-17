@@ -324,7 +324,7 @@ def submit(
 
 def cancel(db, user: "models.User", job_ids: List[int], by_admin: bool = False) -> Dict[str, Any]:
     """Cancel jobs the caller owns (or any job, for an admin)."""
-    from services import audit, container_manager
+    from services import audit
 
     cancelled, skipped = [], []
     query = db.query(models.Job).filter(models.Job.id.in_(job_ids))
@@ -341,7 +341,7 @@ def cancel(db, user: "models.User", job_ids: List[int], by_admin: bool = False) 
             skipped.append({"id": job_id, "reason": f"already {job.status.value}"})
             continue
         if job.container_id:
-            container_manager.stop_job_container(job.id)
+            _job_container(db, job, "stop")
         job.status = models.JobStatus.cancelled
         job.finished_at = datetime.utcnow()
         job.message = "Cancelled by an administrator." if by_admin else "Cancelled."
@@ -381,14 +381,49 @@ def _pool_gpus() -> List[Dict[str, Any]]:
     return [g for g in gpus if g["index"] in allowed]
 
 
-def gpu_availability(db) -> List[Dict[str, Any]]:
-    """Free VRAM per GPU, counting what running jobs may still take.
+def _on_node(query, node):
+    """Restrict a job query to the jobs on *node*; NULL node_id is the master."""
+    if node is None or node.is_local:
+        return query.filter(models.Job.node_id.is_(None))
+    return query.filter(models.Job.node_id == node.id)
+
+
+def _node_gpus(node) -> List[Dict[str, Any]]:
+    """Another node's GPUs as its last heartbeat reported them.
+
+    Nothing while the heartbeat is stale or the node's own reading is, for the
+    same reason _pool_gpus offers nothing on a stale local reading.
+    """
+    from services import nodes
+
+    t = nodes.telemetry(node.id)
+    if t is None or not t.get("gpu_telemetry_ok", True):
+        return []
+    return list(t.get("gpus") or [])
+
+
+def _held_now(job: "models.Job") -> Optional[int]:
+    """What the job holds right now, from readings already taken: the
+    node's heartbeat, or this host's scan.  Never a docker exec, because
+    every job list request ends up here."""
+    from services import gpu_scan, nodes
+
+    if job.node_id is not None:
+        t = nodes.telemetry(job.node_id)
+        return (((t or {}).get("jobs") or {}).get(str(job.id)) or {}).get("vram_mb")
+    return gpu_scan.container_mb(job.container_id) if job.container_id else None
+
+
+def gpu_availability(db, node=None) -> List[Dict[str, Any]]:
+    """Free VRAM per GPU of *node* (the master by default), counting what
+    running jobs may still take.
 
     Two numbers matter and neither alone is enough: what nvidia-smi reports as
     used (covers everything on the card, including work outside the platform)
     and what admitted jobs are entitled to (covers a job that has started but
-    not yet allocated).  Taking the larger of the two is what stops the
-    scheduler from admitting two jobs into the same free space.
+    not yet allocated).  What is committed is the allowances plus whatever
+    the card holds beyond what the jobs themselves hold; that sum is what
+    stops the scheduler from admitting two jobs into the same free space.
 
     The second number is the *allowance*, not the request.  A job holding its
     request plus a little is inside its allowance and is deliberately not
@@ -403,18 +438,34 @@ def gpu_availability(db) -> List[Dict[str, Any]]:
     """
     reserved: Dict[int, int] = defaultdict(int)
     entitled: Dict[int, int] = defaultdict(int)
+    covered: Dict[int, int] = defaultdict(int)
     running_count: Dict[int, int] = defaultdict(int)
-    for job in db.query(models.Job).filter(models.Job.status.in_(_ON_GPU)).all():
+    on_node = _on_node(db.query(models.Job).filter(models.Job.status.in_(_ON_GPU)), node)
+    for job in on_node.all():
         asked = job.gpu_memory_mb or 0
-        for index in _parse_indices(job.gpu_indices):
+        indices = _parse_indices(job.gpu_indices)
+        allowance = gpu_overrun_allowance_mb(asked) if asked else 0
+        held = _held_now(job)
+        for index in indices:
             reserved[index] += asked
-            entitled[index] += gpu_overrun_allowance_mb(asked) if asked else 0
+            entitled[index] += allowance
             running_count[index] += 1
+            if held:
+                covered[index] += min(held // len(indices), allowance)
 
     out = []
-    for gpu in _pool_gpus():
+    remote = node is not None and not node.is_local
+    for gpu in (_node_gpus(node) if remote else _pool_gpus()):
         index = gpu["index"]
-        committed = max(gpu["used_memory_mb"], entitled[index])
+        # Memory on the card that no admitted job's allowance accounts for:
+        # a workspace, another program, the jobs' own excess.  It adds to the
+        # allowances; it is not an alternative to them.  max(used, entitled)
+        # let a pass after the first put a fourth 10 GiB job beside three
+        # others and 8 GiB held outside the platform on a 48 GiB card.  A job
+        # whose holding cannot be read counts as holding nothing, so its use
+        # is counted twice rather than not at all.
+        outside = max(0, gpu["used_memory_mb"] - covered[index])
+        committed = entitled[index] + outside
         out.append({
             "index": index,
             "uuid": gpu.get("uuid"),
@@ -425,23 +476,29 @@ def gpu_availability(db) -> List[Dict[str, Any]]:
             # What those jobs may hold before being stopped, which is what the
             # free figure below is actually computed against.
             "entitled_mb": entitled[index],
+            # Held on the card beyond what admitted jobs are entitled to.
+            "outside_mb": outside,
             "free_mb": max(0, gpu["total_memory_mb"] - committed - settings.JOB_GPU_HEADROOM_MB),
             "running_jobs": running_count[index],
+            "node_id": node.id if remote else None,
         })
     return out
 
 
-def _allocated_cores(db) -> float:
-    """Every core the platform has promised, used or not.
+def _allocated_cores(db, node=None) -> float:
+    """Every core the platform has promised on *node*, used or not.
 
     The pessimistic reading, kept for when nothing has measured the machine.
     """
     total = 0.0
-    for job in db.query(models.Job).filter(models.Job.status.in_(_ON_GPU)).all():
+    for job in _on_node(db.query(models.Job).filter(models.Job.status.in_(_ON_GPU)), node).all():
         total += job.cpu_cores or 0.0
-    for session in db.query(models.JupyterSession).filter(
-        models.JupyterSession.status == models.SessionStatus.running
-    ).all():
+    remote = node is not None and not node.is_local
+    sessions = db.query(models.JupyterSession).filter(
+        models.JupyterSession.status == models.SessionStatus.running)
+    sessions = sessions.filter(models.JupyterSession.node_id == node.id) if remote \
+        else sessions.filter(models.JupyterSession.node_id.is_(None))
+    for session in sessions.all():
         user = session.user
         assignment = user.gpu_assignment if user else None
         total += float((assignment.cpu_cores if assignment else None)
@@ -470,7 +527,7 @@ def _busy_cores() -> Optional[float]:
     return max(0.0, float(percent) / 100.0 * float(cores))
 
 
-def _unramped_cores(db) -> float:
+def _unramped_cores(db, node=None) -> float:
     """What a just-started job will use but has not started using yet.
 
     No measurement can see a job that is still importing torch.  Holding its
@@ -479,14 +536,15 @@ def _unramped_cores(db) -> float:
     """
     cutoff = datetime.utcnow() - timedelta(seconds=settings.JOB_CPU_RAMP_SECONDS)
     total = 0.0
-    for job in db.query(models.Job).filter(models.Job.status.in_(_ON_GPU)).all():
+    for job in _on_node(db.query(models.Job).filter(models.Job.status.in_(_ON_GPU)), node).all():
         if job.started_at is None or job.started_at > cutoff:
             total += job.cpu_cores or 0.0
     return total
 
 
-def cpu_capacity(db) -> Dict[str, Any]:
-    """Cores the queue may hand out, and how many are in use.
+def cpu_capacity(db, node=None) -> Dict[str, Any]:
+    """Cores the queue may hand out on *node* (the master by default), and how
+    many are in use.
 
     A core count is a ceiling, not a reservation: the cgroup lets a workspace
     burst up to it and takes nothing back while it idles.  Adding those
@@ -509,6 +567,8 @@ def cpu_capacity(db) -> Dict[str, Any]:
     """
     import os as _os
 
+    if node is not None and not node.is_local:
+        return _remote_cpu_capacity(db, node)
     total = float(settings.JOB_CPU_POOL_CORES or 0)
     if total <= 0:
         total = max(1.0, (_os.cpu_count() or 8) - float(settings.JOB_CPU_RESERVED_CORES or 0))
@@ -528,6 +588,30 @@ def cpu_capacity(db) -> Dict[str, Any]:
     }
 
 
+def _remote_cpu_capacity(db, node) -> Dict[str, Any]:
+    """The same arithmetic for another node, from what it reports.
+
+    Its pool is its core count less the same reserve; what is in use is its
+    one-minute load average, which counts everything on that machine, plus the
+    jobs too new to have loaded a core, as on the master.
+    """
+    import json as _json
+    from services import nodes
+
+    try:
+        cores = int(_json.loads(node.inventory or "{}").get("cpu_count") or 0)
+    except ValueError:
+        cores = 0
+    total = max(1.0, (cores or 1) - float(settings.JOB_CPU_RESERVED_CORES or 0))
+    t = nodes.telemetry(node.id)
+    if t is None or t.get("load1") is None:
+        used, basis = _allocated_cores(db, node), "allocated"
+    else:
+        used, basis = float(t["load1"]) + _unramped_cores(db, node), "measured"
+    return {"total_cores": round(total, 2), "committed_cores": round(used, 2),
+            "free_cores": round(max(0.0, total - used), 2), "basis": basis}
+
+
 def cores_for(user: "models.User") -> float:
     """Cores a job of this user's will be given (their workspace allocation)."""
     assignment = user.gpu_assignment
@@ -537,6 +621,106 @@ def cores_for(user: "models.User") -> float:
 
 def _parse_indices(value: Optional[str]) -> List[int]:
     return [int(x) for x in (value or "").split(",") if x.strip().lstrip("-").isdigit()]
+
+
+# ---------------------------------------------------------------------------
+# Which machine a job is on
+#
+# A job's node_id is NULL on the master, as every job was before there were
+# other nodes, and the master's own containers are handled exactly as they
+# always were.  A job on another node is handled by that node's agent through
+# services.nodes, with the same operations.
+# ---------------------------------------------------------------------------
+
+#: action -> (the function on the master, the node operation elsewhere)
+_CONTAINER_OPS = {
+    "state": ("job_container_state", "job_state"),
+    "stop": ("stop_job_container", "stop_job"),
+    "remove": ("remove_job_container", "remove_job"),
+    "pause": ("pause_job_container", "pause_job"),
+    "unpause": ("unpause_job_container", "unpause_job"),
+}
+
+
+STATE_TIMEOUT_SECONDS = 15
+
+
+def _job_container(db, job: "models.Job", action: str):
+    """Do *action* to the job's container, on whichever node it is.
+
+    A node that cannot be reached raises NodeError for "state", because "I do
+    not know" must not be read as "the container is gone"; for the others it
+    logs and returns None, and the next pass tries again.
+    """
+    from services import container_manager, nodes
+
+    local_fn, node_op = _CONTAINER_OPS[action]
+    if job.node_id is None:
+        return getattr(container_manager, local_fn)(job.id)
+    try:
+        # Asking a container's state takes the node well under a second.  No
+        # answer within STATE_TIMEOUT means the node is in trouble, and the
+        # next pass asks again; waiting the full command timeout held up
+        # every other job in the pass.
+        timeout = STATE_TIMEOUT_SECONDS if action == "state" else None
+        return nodes.call(db, job.node_id, node_op, timeout=timeout, job_id=job.id)
+    except nodes.NodeError as exc:
+        logger.warning("Could not %s job %d on its node: %s", action, job.id, exc)
+        if action == "state":
+            raise
+        return None
+
+
+def _site_capacity(db, site: str, cache: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """What each ready node of *site* has free, once per pass.
+
+    The callers keep these figures current as they admit jobs.  On a single
+    machine it is one entry, the master.
+    """
+    from services import nodes
+
+    if site not in cache:
+        cache[site] = [{
+            "node_id": None if n.is_local else n.id,
+            # The master is asked as it always was, with no node argument.
+            "gpus": gpu_availability(db) if n.is_local else gpu_availability(db, n),
+            "free_cores": (cpu_capacity(db) if n.is_local else cpu_capacity(db, n))["free_cores"],
+        } for n in nodes.ready_nodes(db, site)]
+    return cache[site]
+
+
+def _choose(job: "models.Job", cores: float, caps: List[Dict[str, Any]]):
+    """``(capacity entry, GPU indices)`` for *job*, or None if nothing fits.
+
+    Densest fit over the nodes: the node and cards with the least free memory
+    that still fit, then the fewest free cores, which keeps whole cards and
+    whole nodes free for larger jobs.
+    """
+    choice = None
+    for cap in caps:
+        if cores > cap["free_cores"]:
+            continue
+        placement = _place(job, cap["gpus"])
+        if placement is None:
+            continue
+        fit = (sum(g["free_mb"] for g in cap["gpus"] if g["index"] in placement),
+               cap["free_cores"])
+        if choice is None or fit < choice[0]:
+            choice = (fit, cap, placement)
+    return None if choice is None else choice[1:]
+
+
+def _charge_capacity(cap: Dict[str, Any], job: "models.Job", placement: List[int], cores: float) -> None:
+    """Take an admitted job's share out of its node's figures for this pass."""
+    cap["free_cores"] -= cores
+    for entry in cap["gpus"]:
+        if entry["index"] in placement:
+            # The allowance, not the request: gpu_availability counts admitted
+            # jobs at their allowance, and a job admitted earlier in this same
+            # pass must be counted the same way, or the next one is placed in
+            # the margin the first may still grow into.
+            entry["free_mb"] = max(0, entry["free_mb"] - gpu_overrun_allowance_mb(job.gpu_memory_mb))
+            entry["running_jobs"] += 1
 
 
 def _place(job: "models.Job", availability: List[Dict[str, Any]]) -> Optional[List[int]]:
@@ -572,13 +756,9 @@ def gpu_guard_pass() -> Dict[str, Any]:
     # Hold a failing scan back to the scheduler's own interval: a wedged driver
     # answers slowly, and asking it once a second achieves nothing but the wait.
     gpu_scan.refresh(retry_after_failure=settings.JOB_SCHEDULER_INTERVAL)
-    if not gpu_scan.usable():
-        # Without the scan, reading a job costs a docker exec, and doing that
-        # for every job once a second is the expense this loop exists to avoid.
-        # The scheduler pass already checks the same jobs the same way on its
-        # own ten-second cycle, so standing down here degrades the guard to
-        # exactly what this was before the scan existed, and no further.
-        return {"checked": 0, "stopped": [], "scan": "unusable"}
+    # Jobs on other nodes are read from their heartbeats, which do not depend
+    # on this machine's scan.
+    local_scan = gpu_scan.usable()
 
     db = SessionLocal()
     try:
@@ -589,6 +769,15 @@ def gpu_guard_pass() -> Dict[str, Any]:
             .filter(models.Job.gpu_memory_mb > 0)
             .all()
         )
+        if not local_scan:
+            # Without the scan, reading a local job costs a docker exec, and
+            # doing that for every job once a second is the expense this loop
+            # exists to avoid.  The scheduler pass already checks the same jobs
+            # the same way on its own ten-second cycle, so standing down here
+            # degrades the guard to what it was before the scan existed.
+            running = [j for j in running if j.node_id is not None]
+            if not running:
+                return {"checked": 0, "stopped": [], "scan": "unusable"}
         stopped = []
         for job in running:
             if _check_gpu_overrun(db, job) == "stopped":
@@ -611,9 +800,16 @@ def scheduler_pass() -> Dict[str, Any]:
 
     db = SessionLocal()
     try:
+        t0 = time.perf_counter()
         finished = _finalise_running(db)
+        t1 = time.perf_counter()
         resumed = _resume_paused(db)
+        t2 = time.perf_counter()
         started = _dispatch_queued(db)
+        if settings.LOOP_TIMING_LOG:
+            logger.info("pass finalise %.1f resume %.1f dispatch %.1f ms, %d started",
+                        (t1 - t0) * 1000, (t2 - t1) * 1000,
+                        (time.perf_counter() - t2) * 1000, len(started))
         return {"finished": finished, "resumed": resumed, "started": started}
     except Exception as exc:  # noqa: BLE001 (the loop must survive anything)
         logger.error("Scheduler pass failed: %s", exc)
@@ -625,16 +821,21 @@ def scheduler_pass() -> Dict[str, Any]:
 
 def _finalise_running(db) -> List[Dict[str, Any]]:
     """Record the outcome of jobs whose container has exited or timed out."""
-    from services import container_manager
-
     results = []
     # True when something was written that no entry in *results* covers, a
     # note on a job that is still running.  Without it the change would sit
     # uncommitted until some unrelated job happened to finish in the same pass.
     changed = False
     jobs = db.query(models.Job).filter(models.Job.status.in_(_ON_GPU)).all()
+    from services.nodes import NodeError
+
     for job in jobs:
-        state = container_manager.job_container_state(job.id)
+        try:
+            state = _job_container(db, job, "state")
+        except NodeError:
+            # Its node is out of reach.  The job may well be running; it is
+            # left as it is until the node answers (docs/multi-node.md).
+            continue
 
         if state is None:
             # The container is gone without us seeing it exit.  It may simply
@@ -674,23 +875,24 @@ def _finalise_running(db) -> List[Dict[str, Any]]:
             limit = job.max_runtime_minutes
             if limit and job.started_at and \
                     _elapsed_seconds(job) > limit * 60:
-                container_manager.stop_job_container(job.id)
-                container_manager.remove_job_container(job.id)
+                _job_container(db, job, "stop")
+                _job_container(db, job, "remove")
                 _close(db, job, models.JobStatus.timeout, None,
                        f"Stopped after reaching its {limit} minute limit.")
                 results.append({"id": job.id, "status": "timeout"})
             continue
 
         exit_code = state.get("exit_code")
+        ended = _exit_time(job, state)
         if state.get("oom_killed"):
             _close(db, job, models.JobStatus.failed, exit_code,
-                   "The job ran out of memory and was stopped.")
+                   "The job ran out of memory and was stopped.", ended)
         elif exit_code == 0:
-            _close(db, job, models.JobStatus.succeeded, 0, None)
+            _close(db, job, models.JobStatus.succeeded, 0, None, ended)
         else:
             _close(db, job, models.JobStatus.failed, exit_code,
-                   f"The script exited with code {exit_code}.")
-        container_manager.remove_job_container(job.id)
+                   f"The script exited with code {exit_code}.", ended)
+        _job_container(db, job, "remove")
         results.append({"id": job.id, "status": job.status.value})
 
     if results or changed:
@@ -706,7 +908,14 @@ def job_gpu_memory_mb(job: "models.Job") -> Optional[int]:
     per-container exec stays as the fallback for a deployment whose backend is
     not in the host PID namespace, where the scan can see nothing.
     """
-    from services import container_manager, gpu_scan
+    from services import container_manager, gpu_scan, nodes
+
+    if job.node_id is not None:
+        # Measured on its node by the same scan, and reported in the node's
+        # heartbeat; nothing known while that heartbeat is stale.
+        t = nodes.telemetry(job.node_id)
+        reading = ((t or {}).get("jobs") or {}).get(str(job.id)) or {}
+        return reading.get("vram_mb")
 
     if job.container_id:
         mb = gpu_scan.container_mb(job.container_id)
@@ -760,7 +969,7 @@ def _check_gpu_overrun(db, job: "models.Job") -> Optional[str]:
     cached block is still checked out of the driver and still unavailable to
     the neighbour.  From the card's side there is no difference.
     """
-    from services import audit, container_manager
+    from services import audit
 
     if not job.gpu_count or not job.gpu_memory_mb:
         return None
@@ -852,8 +1061,8 @@ def _check_gpu_overrun(db, job: "models.Job") -> Optional[str]:
     audit.record(db, "job.gpu_overrun_stopped", actor="system",
                  target=f"job:{job.id}", detail=detail, commit=False)
     db.commit()
-    container_manager.stop_job_container(job.id)
-    container_manager.remove_job_container(job.id)
+    _job_container(db, job, "stop")
+    _job_container(db, job, "remove")
     return "stopped"
 
 
@@ -871,7 +1080,7 @@ def _check_time_budget(db, job: "models.Job") -> Optional[str]:
     output file, so a long run should checkpoint.  Set the action to ``stop``
     for a deployment where re-running is worse than losing the queue slot.
     """
-    from services import audit, container_manager, quota
+    from services import audit, quota
 
     action = (settings.JOB_TIME_QUOTA_ACTION or "requeue").lower()
     if action in ("off", "none"):
@@ -899,7 +1108,7 @@ def _check_time_budget(db, job: "models.Job") -> Optional[str]:
     # up until the period refilled.
     cpu_action = (settings.JOB_TIME_QUOTA_CPU_ACTION or "pause").lower()
     if not job.gpu_count and cpu_action == "pause":
-        if container_manager.pause_job_container(job.id):
+        if _job_container(db, job, "pause"):
             _pause(db, job, f"{reason} It is paused where it stands and picks up "
                             "from the same point when the budget refills.")
             audit.record(db, "job.budget_paused", actor="system",
@@ -907,8 +1116,8 @@ def _check_time_budget(db, job: "models.Job") -> Optional[str]:
             return "paused"
         logger.warning("Job %d could not be paused, stopping it instead", job.id)
 
-    container_manager.stop_job_container(job.id)
-    container_manager.remove_job_container(job.id)
+    _job_container(db, job, "stop")
+    _job_container(db, job, "remove")
 
     if action == "requeue":
         _requeue(db, job, f"{reason} It is back in the queue and starts again "
@@ -989,9 +1198,9 @@ def _pause(db, job: "models.Job", message: str) -> None:
 
 def _resume(db, job: "models.Job") -> bool:
     """Thaw a paused job.  A new stretch starts, so the clock starts with it."""
-    from services import audit, container_manager
+    from services import audit
 
-    if not container_manager.unpause_job_container(job.id):
+    if not _job_container(db, job, "unpause"):
         # The container is gone, so there is nothing to resume into.
         _close(db, job, models.JobStatus.failed, None,
                "The job was paused and its container has since gone away.")
@@ -1023,11 +1232,15 @@ def _resume_paused(db) -> List[Dict[str, Any]]:
     if not paused:
         return []
 
-    from services import container_manager
+    from services.nodes import NodeError
 
     resumed, blockers = [], {}
     for job in paused:
-        if container_manager.job_container_state(job.id) is None:
+        try:
+            gone = _job_container(db, job, "state") is None
+        except NodeError:
+            continue
+        if gone:
             _close(db, job, models.JobStatus.failed, None,
                    "The job was paused and its container has since gone away.")
             continue
@@ -1076,7 +1289,7 @@ def _check_output_size(db, job: "models.Job") -> Optional[str]:
     The owner has no way to notice until their disk quota is gone, so the size
     is surfaced on the job itself.
     """
-    from services import container_manager, safepath
+    from services import safepath
 
     warn_mb = settings.JOB_OUTPUT_WARN_MB or 0
     hard_mb = settings.JOB_MAX_OUTPUT_MB or 0
@@ -1086,8 +1299,8 @@ def _check_output_size(db, job: "models.Job") -> Optional[str]:
     megabytes = safepath.size(workspace_root(job.username), job.output_path) // 1048576
 
     if hard_mb and megabytes >= hard_mb:
-        container_manager.stop_job_container(job.id)
-        container_manager.remove_job_container(job.id)
+        _job_container(db, job, "stop")
+        _job_container(db, job, "remove")
         _close(db, job, models.JobStatus.failed, None,
                f"Stopped: its output file reached {megabytes} MB. Print progress "
                "less often, for example tqdm(..., mininterval=10).")
@@ -1104,7 +1317,32 @@ def _check_output_size(db, job: "models.Job") -> Optional[str]:
     return None
 
 
-def _close(db, job: "models.Job", status_value, exit_code, message) -> bool:
+def _exit_time(job: "models.Job", state: Dict[str, Any]) -> Optional[datetime]:
+    """When the container exited, if Docker says so and it is believable.
+
+    A node out of reach when its job ends reports the exit only when it is
+    back, and booking up to that moment charged the owner for the outage.
+    The node's clock may be off, so the time is kept between the start and now.
+    """
+    raw = state.get("finished_at")
+    if not raw or raw.startswith("0001-"):
+        return None
+    try:
+        # Docker gives nanoseconds and a Z; datetime takes microseconds.
+        head, _, frac = raw.rstrip("Z").partition(".")
+        ended = datetime.strptime(head, "%Y-%m-%dT%H:%M:%S")
+        if frac:
+            ended += timedelta(microseconds=int(frac[:6].ljust(6, "0")))
+    except ValueError:
+        return None
+    now = datetime.utcnow()
+    if job.started_at and ended < job.started_at:
+        return job.started_at
+    return min(ended, now)
+
+
+def _close(db, job: "models.Job", status_value, exit_code, message,
+           ended_at: Optional[datetime] = None) -> bool:
     """Record how a job ended, once.  False when something else got there first.
 
     The VRAM guard and the scheduler pass run in different threads with their
@@ -1115,7 +1353,7 @@ def _close(db, job: "models.Job", status_value, exit_code, message) -> bool:
     change is therefore a compare-and-set on a job that is still active, and
     only the side that wins it books the stretch.
     """
-    now = datetime.utcnow()
+    now = ended_at or datetime.utcnow()
     claimed = (
         db.query(models.Job)
         .filter(models.Job.id == job.id, models.Job.status.in_(_ACTIVE))
@@ -1151,7 +1389,7 @@ def _dispatch_queued(db) -> List[Dict[str, Any]]:
     same user, fall back to submission time, so within one user the queue is
     still first-come-first-served.
     """
-    from services import container_manager, fairshare, quota
+    from services import container_manager, fairshare, node_ops, nodes, quota
 
     queued = (
         db.query(models.Job)
@@ -1169,9 +1407,7 @@ def _dispatch_queued(db) -> List[Dict[str, Any]]:
     for job in db.query(models.Job).filter(models.Job.status.in_(in_flight)).all():
         running_per_user[job.user_id] += 1
 
-    availability = gpu_availability(db)
-    cpu = cpu_capacity(db)
-    free_cores = cpu["free_cores"]
+    capacity: Dict[str, List[Dict[str, Any]]] = {}
     share = fairshare.scores(db)
     # One budget lookup per user per pass, not one per queued job: a user with
     # thirty jobs waiting would otherwise pay for thirty identical answers.
@@ -1213,13 +1449,12 @@ def _dispatch_queued(db) -> List[Dict[str, Any]]:
             continue
 
         job_cores = cores_for(user)
-        if job_cores > free_cores:
-            continue  # not enough CPU left; a smaller job may still fit
+        chosen = _choose(job, job_cores, _site_capacity(db, nodes.site_of(user), capacity))
+        if chosen is None:
+            continue  # no node has the cores and the GPU room; try next pass
+        cap, placement = chosen
 
-        placement = _place(job, availability)
-        if placement is None:
-            continue  # no GPU has room, leave it queued, try again next pass
-
+        job.node_id = cap["node_id"]
         job.gpu_indices = ",".join(str(i) for i in placement)
         job.cpu_cores = job_cores
         job.status = models.JobStatus.starting
@@ -1228,7 +1463,11 @@ def _dispatch_queued(db) -> List[Dict[str, Any]]:
         db.commit()
 
         try:
-            handle = container_manager.start_job_container(job, user)
+            if job.node_id is None:
+                handle = container_manager.start_job_container(job, user)
+            else:
+                handle = nodes.call(db, job.node_id, "start_job",
+                                    job=node_ops.job_args(job), user=node_ops.user_args(user))
         except Exception as exc:  # noqa: BLE001 (one bad job must not stall the queue)
             logger.error("Could not start job %d: %s", job.id, exc)
             _close(db, job, models.JobStatus.failed, None,
@@ -1242,20 +1481,12 @@ def _dispatch_queued(db) -> List[Dict[str, Any]]:
         db.commit()
 
         running_per_user[job.user_id] += 1
-        free_cores -= job_cores
         fairshare.charge(share, job.user_id, job.gpu_count, job_cores)
-        for entry in availability:
-            if entry["index"] in placement:
-                # The allowance, not the request: gpu_availability counts
-                # admitted jobs at their allowance, and a job admitted earlier
-                # in this same pass must be counted the same way, or the next
-                # one is placed in the margin the first may still grow into.
-                entry["free_mb"] = max(0, entry["free_mb"]
-                                       - gpu_overrun_allowance_mb(job.gpu_memory_mb))
-                entry["running_jobs"] += 1
+        _charge_capacity(cap, job, placement, job_cores)
         started.append({
             "id": job.id, "user": job.username,
             "gpus": job.gpu_indices or "none", "cores": job_cores,
+            "node": job.node_id,
         })
 
     return started
@@ -1355,7 +1586,7 @@ def queued_blockers(db) -> Dict[int, Optional[str]]:
     ``None`` means nothing is blocking it: it is next, and will start on the
     coming pass.  A string is the reason, phrased for the person waiting.
     """
-    from services import fairshare, quota
+    from services import fairshare, nodes, quota
 
     queued = (
         db.query(models.Job)
@@ -1371,8 +1602,7 @@ def queued_blockers(db) -> Dict[int, Optional[str]]:
     for job in db.query(models.Job).filter(models.Job.status.in_(in_flight)).all():
         running_per_user[job.user_id] += 1
 
-    availability = gpu_availability(db)
-    free_cores = cpu_capacity(db)["free_cores"]
+    capacity: Dict[str, List[Dict[str, Any]]] = {}
     share = fairshare.scores(db)
 
     reasons: Dict[int, Optional[str]] = {}
@@ -1402,6 +1632,11 @@ def queued_blockers(db) -> Dict[int, Optional[str]]:
             continue
 
         job_cores = cores_for(user)
+        caps = _site_capacity(db, nodes.site_of(user), capacity)
+        if not caps:
+            reasons[job.id] = "no node of your site is available at the moment"
+            continue
+        free_cores = max(c["free_cores"] for c in caps)
         if job_cores > free_cores:
             reasons[job.id] = (
                 f"waiting for CPU: it needs {job_cores:g} cores and "
@@ -1409,8 +1644,9 @@ def queued_blockers(db) -> Dict[int, Optional[str]]:
             )
             continue
 
-        placement = _place(job, availability)
-        if placement is None:
+        chosen = _choose(job, job_cores, caps)
+        availability = [g for c in caps for g in c["gpus"]]
+        if chosen is None:
             from services import gpu_monitor
 
             if job.gpu_count and not gpu_monitor.telemetry()["ok"]:
@@ -1439,17 +1675,8 @@ def queued_blockers(db) -> Dict[int, Optional[str]]:
         # free before it took its share.
         reasons[job.id] = None
         running_per_user[job.user_id] += 1
-        free_cores -= job_cores
         fairshare.charge(share, job.user_id, job.gpu_count, job_cores)
-        for entry in availability:
-            if entry["index"] in placement:
-                # The allowance, not the request: gpu_availability counts
-                # admitted jobs at their allowance, and a job admitted earlier
-                # in this same pass must be counted the same way, or the next
-                # one is placed in the margin the first may still grow into.
-                entry["free_mb"] = max(0, entry["free_mb"]
-                                       - gpu_overrun_allowance_mb(job.gpu_memory_mb))
-                entry["running_jobs"] += 1
+        _charge_capacity(chosen[0], job, chosen[1], job_cores)
 
     return reasons
 
@@ -1651,6 +1878,9 @@ def view(
         "max_runtime_minutes": job.max_runtime_minutes,
         "cpu_cores": job.cpu_cores or None,
         "gpus": _parse_indices(job.gpu_indices),
+        # The machine it runs on; None is the master.  The GPU indices above
+        # are that machine's.
+        "node_id": job.node_id,
         "status": job.status.value,
         "exit_code": job.exit_code,
         "message": job.message,

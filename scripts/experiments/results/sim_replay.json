@@ -45,8 +45,8 @@
     "p99": 5353.9
    },
    "sim_wait_s": {
-    "median": 5.400000000023283,
-    "p90": 9.899999999906868,
+    "median": 5.699999999953434,
+    "p90": 355.30000000004657,
     "p99": 3865.4000000000233
    }
   }
@@ -177,62 +177,62 @@
      }
     },
     "slurm": {
-     "jain_service": 0.9999095593699749,
+     "jain_service": 0.9999095593699747,
      "jobs": 796,
      "unfinished": 0,
-     "mean_wait_min": 1187.2855459589616,
-     "p95_wait_min": 2659.1991666666668,
-     "mean_bsld": 695.3753498621028,
+     "mean_wait_min": 1146.620554334171,
+     "p95_wait_min": 2656.8658333333337,
+     "mean_bsld": 659.9877827143636,
      "makespan_h": 201.27423611111112,
      "throughput_jobs_per_h": 3.954803234531107,
-     "gpu_occupancy": 0.7562092763845919,
-     "jobs_per_busy_card": 1.1229245887685402,
+     "gpu_occupancy": 0.734613602433664,
+     "jobs_per_busy_card": 1.1559355665263542,
      "vram_held_over_reserved": 0.7049498250439777,
      "per_user": {
       "user1": {
        "jobs": 59,
-       "mean_wait_min": 830.3575070621469,
-       "mean_bsld": 209.32471555642255
+       "mean_wait_min": 971.8772810734463,
+       "mean_bsld": 221.4944346614331
       },
       "user3": {
        "jobs": 133,
-       "mean_wait_min": 27.59407894736842,
-       "mean_bsld": 16.042396693571103
+       "mean_wait_min": 22.952474937343357,
+       "mean_bsld": 10.483023050896781
       },
       "user4": {
        "jobs": 604,
-       "mean_wait_min": 1477.5135582229582,
-       "mean_bsld": 892.4420223711257
+       "mean_wait_min": 1411.1200703642385,
+       "mean_bsld": 845.8408300162907
       }
      }
     },
     "platform": {
-     "jain_service": 0.9999095593699749,
+     "jain_service": 0.9999095593699747,
      "jobs": 796,
      "unfinished": 0,
-     "mean_wait_min": 1172.0114672319933,
-     "p95_wait_min": 2663.3658333333337,
-     "mean_bsld": 679.9712641476559,
+     "mean_wait_min": 1146.620554334171,
+     "p95_wait_min": 2656.8658333333337,
+     "mean_bsld": 659.9877827143636,
      "makespan_h": 201.27423611111112,
      "throughput_jobs_per_h": 3.954803234531107,
-     "gpu_occupancy": 0.7563491491190356,
-     "jobs_per_busy_card": 1.1227169247115527,
+     "gpu_occupancy": 0.734613602433664,
+     "jobs_per_busy_card": 1.1559355665263542,
      "vram_held_over_reserved": 0.7049498250439777,
      "per_user": {
       "user1": {
        "jobs": 59,
-       "mean_wait_min": 832.0185240112994,
-       "mean_bsld": 209.70587780405478
+       "mean_wait_min": 971.8772810734463,
+       "mean_bsld": 221.4944346614331
       },
       "user3": {
        "jobs": 133,
-       "mean_wait_min": 27.59407894736842,
-       "mean_bsld": 16.042396693571103
+       "mean_wait_min": 22.952474937343357,
+       "mean_bsld": 10.483023050896781
       },
       "user4": {
        "jobs": 604,
-       "mean_wait_min": 1457.2218915562914,
-       "mean_bsld": 872.1040409120033
+       "mean_wait_min": 1411.1200703642385,
+       "mean_bsld": 845.8408300162907
       }
      }
     }
@@ -269,22 +269,22 @@
      }
     },
     "slurm": {
-     "jain_service": 0.745881436896509,
+     "jain_service": 0.743715061848092,
      "jobs": 796,
      "unfinished": 0,
-     "mean_wait_min": 2376.5470983825376,
-     "p95_wait_min": 6175.1016666666665,
-     "mean_bsld": 1404.7215085939056,
-     "makespan_h": 136.14760069444444,
-     "throughput_jobs_per_h": 5.846595870510123,
-     "gpu_occupancy": 0.9733785399215298,
-     "jobs_per_busy_card": 1.2897009505781325,
+     "mean_wait_min": 2370.372684647194,
+     "p95_wait_min": 6188.794791666666,
+     "mean_bsld": 1396.8086051933644,
+     "makespan_h": 136.33093402777777,
+     "throughput_jobs_per_h": 5.838733561656762,
+     "gpu_occupancy": 0.9734569238675221,
+     "jobs_per_busy_card": 1.287862894722659,
      "vram_held_over_reserved": 0.7049498250439777,
      "per_user": {
       "user1": {
        "jobs": 59,
-       "mean_wait_min": 2401.895167725989,
-       "mean_bsld": 640.8033932937448
+       "mean_wait_min": 2407.4686140536724,
+       "mean_bsld": 642.9294865064984
       },
       "user3": {
        "jobs": 133,
@@ -293,28 +293,28 @@
       },
       "user4": {
        "jobs": 604,
-       "mean_wait_min": 2889.720276972958,
-       "mean_bsld": 1785.1177098118533
+       "mean_wait_min": 2881.0387096440395,
+       "mean_bsld": 1774.4817650992984
       }
      }
     },
     "platform": {
-     "jain_service": 0.745881436896509,
+     "jain_service": 0.743715061848092,
      "jobs": 796,
      "unfinished": 0,
-     "mean_wait_min": 2376.627081632119,
-     "p95_wait_min": 6175.1016666666665,
-     "mean_bsld": 1404.802591579625,
-     "makespan_h": 136.14760069444444,
-     "throughput_jobs_per_h": 5.846595870510123,
-     "gpu_occupancy": 0.9733785399215298,
-     "jobs_per_busy_card": 1.2897009505781325,
+     "mean_wait_min": 2370.514016305486,
+     "p95_wait_min": 6188.794791666666,
+     "mean_bsld": 1396.9517394960567,
+     "makespan_h": 136.33093402777777,
+     "throughput_jobs_per_h": 5.838733561656762,
+     "gpu_occupancy": 0.9734569238675221,
+     "jobs_per_busy_card": 1.287862894722659,
      "vram_held_over_reserved": 0.7049498250439777,
      "per_user": {
       "user1": {
        "jobs": 59,
-       "mean_wait_min": 2402.9912129237287,
-       "mean_bsld": 641.8994384914848
+       "mean_wait_min": 2409.4262411723166,
+       "mean_bsld": 644.8871136251424
       },
       "user3": {
        "jobs": 133,
@@ -323,8 +323,8 @@
       },
       "user4": {
        "jobs": 604,
-       "mean_wait_min": 2889.718621343819,
-       "mean_bsld": 1785.1175035038498
+       "mean_wait_min": 2881.0337427566224,
+       "mean_bsld": 1774.4791738823167
       }
      }
     }
@@ -336,13 +336,13 @@
      "jain_service": 0.9999400267069635,
      "jobs": 796,
      "unfinished": 0,
-     "mean_wait_min": 2.1028203517587243,
-     "p95_wait_min": 5.021666666667443,
-     "mean_bsld": 1.6155740302052215,
+     "mean_wait_min": 3.1733814907872,
+     "p95_wait_min": 21.876666666666278,
+     "mean_bsld": 2.2701155512244857,
      "makespan_h": 794.0832222222222,
      "throughput_jobs_per_h": 1.0024138248034178,
-     "gpu_occupancy": 0.20554408724861947,
-     "jobs_per_busy_card": 1.0471521070517456,
+     "gpu_occupancy": 0.20623308933894047,
+     "jobs_per_busy_card": 1.0436536869245228,
      "vram_held_over_reserved": 0.7049498250439777,
      "per_user": {
       "user1": {
@@ -352,13 +352,13 @@
       },
       "user3": {
        "jobs": 133,
-       "mean_wait_min": 7.0354636591478625,
-       "mean_bsld": 2.035631975928306
+       "mean_wait_min": 13.407644110275681,
+       "mean_bsld": 5.952445357233694
       },
       "user4": {
        "jobs": 604,
-       "mean_wait_min": 1.214552980132361,
-       "mean_bsld": 1.5826194394322048
+       "mean_wait_min": 1.2222792494480343,
+       "mean_bsld": 1.5827500205873668
       }
      }
     },
@@ -366,13 +366,13 @@
      "jain_service": 0.9999400267069635,
      "jobs": 796,
      "unfinished": 0,
-     "mean_wait_min": 2.1028203517587243,
-     "p95_wait_min": 5.021666666667443,
-     "mean_bsld": 1.6155740302052215,
+     "mean_wait_min": 3.1733814907872,
+     "p95_wait_min": 21.876666666666278,
+     "mean_bsld": 2.2701155512244857,
      "makespan_h": 794.0832222222222,
      "throughput_jobs_per_h": 1.0024138248034178,
-     "gpu_occupancy": 0.20554408724861947,
-     "jobs_per_busy_card": 1.0471521070517456,
+     "gpu_occupancy": 0.20623308933894047,
+     "jobs_per_busy_card": 1.0436536869245228,
      "vram_held_over_reserved": 0.7049498250439777,
      "per_user": {
       "user1": {
@@ -382,13 +382,13 @@
       },
       "user3": {
        "jobs": 133,
-       "mean_wait_min": 7.0354636591478625,
-       "mean_bsld": 2.035631975928306
+       "mean_wait_min": 13.407644110275681,
+       "mean_bsld": 5.952445357233694
       },
       "user4": {
        "jobs": 604,
-       "mean_wait_min": 1.214552980132361,
-       "mean_bsld": 1.5826194394322048
+       "mean_wait_min": 1.2222792494480343,
+       "mean_bsld": 1.5827500205873668
       }
      }
     },
@@ -396,13 +396,13 @@
      "jain_service": 0.9999400267069635,
      "jobs": 796,
      "unfinished": 0,
-     "mean_wait_min": 2.1028203517587243,
-     "p95_wait_min": 5.021666666667443,
-     "mean_bsld": 1.6155740302052215,
+     "mean_wait_min": 3.1733814907872,
+     "p95_wait_min": 21.876666666666278,
+     "mean_bsld": 2.2701155512244857,
      "makespan_h": 794.0832222222222,
      "throughput_jobs_per_h": 1.0024138248034178,
-     "gpu_occupancy": 0.20554408724861947,
-     "jobs_per_busy_card": 1.0471521070517456,
+     "gpu_occupancy": 0.20623308933894047,
+     "jobs_per_busy_card": 1.0436536869245228,
      "vram_held_over_reserved": 0.7049498250439777,
      "per_user": {
       "user1": {
@@ -412,45 +412,45 @@
       },
       "user3": {
        "jobs": 133,
-       "mean_wait_min": 7.0354636591478625,
-       "mean_bsld": 2.035631975928306
+       "mean_wait_min": 13.407644110275681,
+       "mean_bsld": 5.952445357233694
       },
       "user4": {
        "jobs": 604,
-       "mean_wait_min": 1.214552980132361,
-       "mean_bsld": 1.5826194394322048
+       "mean_wait_min": 1.2222792494480343,
+       "mean_bsld": 1.5827500205873668
       }
      }
     }
    },
    "4": {
     "fifo": {
-     "jain_service": 0.9426789644855136,
+     "jain_service": 0.9426789644855126,
      "jobs": 796,
      "unfinished": 0,
-     "mean_wait_min": 1170.4578658919597,
-     "p95_wait_min": 1314.2520833333333,
-     "mean_bsld": 413.6146495761163,
+     "mean_wait_min": 1363.6201355737019,
+     "p95_wait_min": 1640.1970833333335,
+     "mean_bsld": 544.7128083765148,
      "makespan_h": 492.058625,
      "throughput_jobs_per_h": 1.6176934201691922,
-     "gpu_occupancy": 0.30231114342433485,
-     "jobs_per_busy_card": 1.1489728716513887,
+     "gpu_occupancy": 0.31288937708726733,
+     "jobs_per_busy_card": 1.1101281412171269,
      "vram_held_over_reserved": 0.7049498250439777,
      "per_user": {
       "user1": {
        "jobs": 59,
-       "mean_wait_min": 1910.0806709039548,
-       "mean_bsld": 342.30845808135626
+       "mean_wait_min": 1898.312309322034,
+       "mean_bsld": 316.60521199688685
       },
       "user3": {
        "jobs": 133,
-       "mean_wait_min": 252.57277568922305,
-       "mean_bsld": 65.18118446228235
+       "mean_wait_min": 653.8472117794486,
+       "mean_bsld": 369.69047955216655
       },
       "user4": {
        "jobs": 604,
-       "mean_wait_min": 1300.3270240066227,
-       "mean_bsld": 497.3045769905712
+       "mean_wait_min": 1467.6813286423842,
+       "mean_bsld": 605.534526787171
       }
      }
     },
@@ -458,29 +458,29 @@
      "jain_service": 0.9426789644855131,
      "jobs": 796,
      "unfinished": 0,
-     "mean_wait_min": 1076.2225225083753,
-     "p95_wait_min": 1344.7541666666666,
-     "mean_bsld": 367.52635197248463,
+     "mean_wait_min": 1100.1310233458962,
+     "p95_wait_min": 1523.5641666666668,
+     "mean_bsld": 379.8839158655101,
      "makespan_h": 491.60306944444443,
      "throughput_jobs_per_h": 1.6191924938539366,
-     "gpu_occupancy": 0.30556997754031595,
-     "jobs_per_busy_card": 1.1377727057637432,
+     "gpu_occupancy": 0.31316183525547103,
+     "jobs_per_busy_card": 1.110190134958783,
      "vram_held_over_reserved": 0.7049498250439777,
      "per_user": {
       "user1": {
        "jobs": 59,
-       "mean_wait_min": 1864.7501624293786,
-       "mean_bsld": 327.64145356838924
+       "mean_wait_min": 1887.9309533898306,
+       "mean_bsld": 308.84818442551455
       },
       "user3": {
        "jobs": 133,
-       "mean_wait_min": 44.15422932330827,
-       "mean_bsld": 11.142050950252637
+       "mean_wait_min": 124.36600877192981,
+       "mean_bsld": 62.19414151896621
       },
       "user4": {
        "jobs": 604,
-       "mean_wait_min": 1226.4575427704194,
-       "mean_bsld": 449.89774442579335
+       "mean_wait_min": 1238.0392204746136,
+       "mean_bsld": 456.7777041818182
       }
      }
     },
@@ -488,126 +488,126 @@
      "jain_service": 0.9426789644855131,
      "jobs": 796,
      "unfinished": 0,
-     "mean_wait_min": 1072.204306427973,
-     "p95_wait_min": 1344.7541666666666,
-     "mean_bsld": 365.94967254427297,
+     "mean_wait_min": 1090.1381422738693,
+     "p95_wait_min": 1426.4645833333334,
+     "mean_bsld": 378.5545923451923,
      "makespan_h": 491.3275972222222,
      "throughput_jobs_per_h": 1.6201003251196935,
-     "gpu_occupancy": 0.3057186867316161,
-     "jobs_per_busy_card": 1.1378568685021795,
+     "gpu_occupancy": 0.31291198079624905,
+     "jobs_per_busy_card": 1.111699547718965,
      "vram_held_over_reserved": 0.7049498250439777,
      "per_user": {
       "user1": {
        "jobs": 59,
-       "mean_wait_min": 1882.6936652542374,
-       "mean_bsld": 328.6232737893179
+       "mean_wait_min": 1848.3744562146892,
+       "mean_bsld": 288.7777838208153
       },
       "user3": {
        "jobs": 133,
-       "mean_wait_min": 44.53392857142857,
-       "mean_bsld": 11.237962512104902
+       "mean_wait_min": 75.96500626566416,
+       "mean_bsld": 40.583569648508565
       },
       "user4": {
        "jobs": 604,
-       "mean_wait_min": 1219.3256443156731,
-       "mean_bsld": 447.7028430092079
+       "mean_wait_min": 1239.3915935430462,
+       "mean_bsld": 461.7449528114128
       }
      }
     }
    },
    "16": {
     "fifo": {
-     "jain_service": 0.8127219921778568,
+     "jain_service": 0.7440054237661157,
      "jobs": 787,
      "unfinished": 9,
-     "mean_wait_min": 1597.6178594875053,
-     "p95_wait_min": 3887.6784374999997,
-     "mean_bsld": 737.5800012081237,
+     "mean_wait_min": 2309.0481856204997,
+     "p95_wait_min": 3995.3207291666668,
+     "mean_bsld": 1224.8102634806078,
      "makespan_h": 399.5781284722222,
      "throughput_jobs_per_h": 1.969577271431438,
-     "gpu_occupancy": 0.3300936983876771,
-     "jobs_per_busy_card": 1.2457928419555822,
+     "gpu_occupancy": 0.33529060306407704,
+     "jobs_per_busy_card": 1.2264834232393431,
      "vram_held_over_reserved": 0.7100722255980836,
      "per_user": {
       "user1": {
        "jobs": 58,
-       "mean_wait_min": 2330.4579454022987,
-       "mean_bsld": 536.9642714216877
+       "mean_wait_min": 2298.8286350574713,
+       "mean_bsld": 582.0539161954345
       },
       "user3": {
        "jobs": 133,
-       "mean_wait_min": 35.41700344611529,
-       "mean_bsld": 12.232414232182093
+       "mean_wait_min": 37.637554824561406,
+       "mean_bsld": 13.73923098153906
       },
       "user4": {
        "jobs": 596,
-       "mean_wait_min": 1874.913142827181,
-       "mean_bsld": 918.967486770898
+       "mean_wait_min": 2816.91789674217,
+       "mean_bsld": 1557.6161619116751
       }
      }
     },
     "slurm": {
-     "jain_service": 0.8203408243038885,
+     "jain_service": 0.7808604055802008,
      "jobs": 788,
      "unfinished": 8,
-     "mean_wait_min": 1470.4594028923434,
-     "p95_wait_min": 2815.2773958333332,
-     "mean_bsld": 641.2598835278601,
+     "mean_wait_min": 1855.7464164287226,
+     "p95_wait_min": 3209.3236458333336,
+     "mean_bsld": 894.1324485624294,
      "makespan_h": 402.5336840277778,
      "throughput_jobs_per_h": 1.9576001494215878,
-     "gpu_occupancy": 0.3356153916070223,
-     "jobs_per_busy_card": 1.238668079648416,
+     "gpu_occupancy": 0.35680440511099065,
+     "jobs_per_busy_card": 1.1651091372961193,
      "vram_held_over_reserved": 0.7016378538004103,
      "per_user": {
       "user1": {
        "jobs": 59,
-       "mean_wait_min": 2675.881043432203,
-       "mean_bsld": 528.525241806699
+       "mean_wait_min": 3029.9940377824855,
+       "mean_bsld": 638.2350082442774
       },
       "user3": {
        "jobs": 133,
-       "mean_wait_min": 31.42577537593985,
-       "mean_bsld": 10.848035716254932
+       "mean_wait_min": 38.45585056390977,
+       "mean_bsld": 13.815504251039977
       },
       "user4": {
        "jobs": 596,
-       "mean_wait_min": 1672.257382200783,
-       "mean_bsld": 793.0990104078802
+       "mean_wait_min": 2145.0401003215884,
+       "mean_bsld": 1115.9111441533453
       }
      }
     },
     "platform": {
-     "jain_service": 0.8165173983096273,
+     "jain_service": 0.7747752402804748,
      "jobs": 788,
      "unfinished": 8,
-     "mean_wait_min": 1432.4245044151862,
-     "p95_wait_min": 3037.5815625,
-     "mean_bsld": 635.9897111810479,
+     "mean_wait_min": 1666.978015413494,
+     "p95_wait_min": 3780.0016666666666,
+     "mean_bsld": 772.8349996296661,
      "makespan_h": 402.97257291666665,
      "throughput_jobs_per_h": 1.955468071428662,
-     "gpu_occupancy": 0.3378719400542328,
-     "jobs_per_busy_card": 1.22905531710875,
+     "gpu_occupancy": 0.3603781933015308,
+     "jobs_per_busy_card": 1.1522986466554876,
      "vram_held_over_reserved": 0.7016378538004103,
      "per_user": {
       "user1": {
        "jobs": 59,
-       "mean_wait_min": 2779.8386705508474,
-       "mean_bsld": 557.7189086705451
+       "mean_wait_min": 3181.6776536016946,
+       "mean_bsld": 682.1191953785166
       },
       "user3": {
        "jobs": 133,
-       "mean_wait_min": 37.17013627819549,
-       "mean_bsld": 12.86947240296105
+       "mean_wait_min": 38.45585056390977,
+       "mean_bsld": 13.815504251039977
       },
       "user4": {
        "jobs": 596,
-       "mean_wait_min": 1610.3966439457495,
-       "mean_bsld": 782.7899949152849
+       "mean_wait_min": 1880.444742379754,
+       "mean_bsld": 951.1937669722416
       }
      }
     }
    }
   }
  },
- "generated": "2026-10-23T12:12:28+08:00"
+ "generated": "2026-11-08T22:18:51+08:00"
 }

@@ -1,0 +1,203 @@
+[
+ {
+  "id": "e3-slurm-s1",
+  "gpus": [],
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 10,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "slurm",
+   "--seed",
+   "1"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ },
+ {
+  "id": "e3-slurm-s2",
+  "gpus": [],
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 10,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "slurm",
+   "--seed",
+   "2"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ },
+ {
+  "id": "e3-slurm-s3",
+  "gpus": [],
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 10,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "slurm",
+   "--seed",
+   "3"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ },
+ {
+  "id": "e3-platform-fifo-s1",
+  "gpus": [
+   1
+  ],
+  "min_free_mib": 47000,
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 20,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "platform",
+   "--policy",
+   "fifo",
+   "--seed",
+   "1"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ },
+ {
+  "id": "e3-platform-fairshare-s1",
+  "gpus": [
+   1
+  ],
+  "min_free_mib": 47000,
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 20,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "platform",
+   "--policy",
+   "fairshare",
+   "--seed",
+   "1"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ },
+ {
+  "id": "e3-platform-fifo-s2",
+  "gpus": [
+   1
+  ],
+  "min_free_mib": 47000,
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 20,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "platform",
+   "--policy",
+   "fifo",
+   "--seed",
+   "2"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ },
+ {
+  "id": "e3-platform-fairshare-s2",
+  "gpus": [
+   1
+  ],
+  "min_free_mib": 47000,
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 20,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "platform",
+   "--policy",
+   "fairshare",
+   "--seed",
+   "2"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ },
+ {
+  "id": "e3-platform-fifo-s3",
+  "gpus": [
+   1
+  ],
+  "min_free_mib": 47000,
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 20,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "platform",
+   "--policy",
+   "fifo",
+   "--seed",
+   "3"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ },
+ {
+  "id": "e3-platform-fairshare-s3",
+  "gpus": [
+   1
+  ],
+  "min_free_mib": 47000,
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 20,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "platform",
+   "--policy",
+   "fairshare",
+   "--seed",
+   "3"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ }
+]

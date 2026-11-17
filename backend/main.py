@@ -11,6 +11,7 @@ Run locally with::
 import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -19,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import models  # noqa: F401  (ensures ORM models register on Base)
 from config import settings
 from database import SessionLocal, engine
-from routers import admin, auth, gpu, jobs, proxy, user
+from routers import admin, auth, gpu, jobs, nodes, proxy, user
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,7 +49,8 @@ def _warn_on_weak_config() -> None:
             "SECRET_KEY is still the built-in default, so every JWT this platform "
             "issues is forgeable. Set SECRET_KEY in .env to a random 32+ byte value."
         )
-    if settings.ADMIN_PASSWORD == "admin123":
+    # A node has no accounts, so the admin password means nothing there.
+    if settings.ADMIN_PASSWORD == "admin123" and settings.ROLE != "node":
         logger.warning(
             "ADMIN_PASSWORD is the documented default (admin123). Change it in "
             ".env and restart, or change the password after first login."
@@ -70,8 +72,11 @@ async def _periodic(name: str, interval: int, work) -> None:
     loop = asyncio.get_running_loop()
     while True:
         await asyncio.sleep(interval)
+        t0 = time.perf_counter()
         try:
             await loop.run_in_executor(None, work)
+            if settings.LOOP_TIMING_LOG:
+                logger.info("loop %s took %.1f ms", name, (time.perf_counter() - t0) * 1000)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 (a loop must never die)
@@ -191,6 +196,17 @@ def _reconcile_startup() -> None:
         db.close()
 
 
+def _register_local_node() -> None:
+    """Make sure the master has its own row among the nodes."""
+    from services import nodes as node_service
+
+    db = SessionLocal()
+    try:
+        node_service.local_node(db)
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Create tables + seed the default admin on first boot.
@@ -199,7 +215,19 @@ async def lifespan(_app: FastAPI):
     _warn_on_weak_config()
     _secure_data_directory()
 
+    if settings.ROLE == "node":
+        # A node has no users, queue or sessions of its own: the master
+        # decides, the agent carries it out (docs/multi-node.md).
+        from services import agent
+
+        loop = asyncio.get_running_loop()
+        node_agent = await loop.run_in_executor(None, agent.start)
+        yield
+        node_agent.stop()
+        return
+
     loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _register_local_node)
     await loop.run_in_executor(None, _reconcile_startup)
     await loop.run_in_executor(None, _sync_authorized_keys)
     # Prime the metrics cache so the first dashboard load is not empty.
@@ -247,7 +275,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="GPU Platform API",
     description="Multi-user GPU/CPU/RAM resource management with isolated JupyterLab sessions.",
-    version="2.0.0",
+    version="1.3.0",
     lifespan=lifespan,
 )
 
@@ -262,15 +290,25 @@ app.add_middleware(
 )
 
 # ── Routers ────────────────────────────────────────────────────────────────
-app.include_router(auth.router)
-app.include_router(user.router)
-app.include_router(gpu.router)
-app.include_router(jobs.router)
-app.include_router(admin.router)
+# A node serves none of the user-facing API: its accounts and queue are the
+# master's.
+if settings.ROLE != "node":
+    app.include_router(auth.router)
+    app.include_router(user.router)
+    app.include_router(gpu.router)
+    app.include_router(jobs.router)
+    app.include_router(admin.router)
+    app.include_router(nodes.admin_router)
+    app.include_router(nodes.agent_router)
 
 # ── Jupyter reverse proxy (HTTP + WebSocket), registered LAST so the
 #    /jupyter/{username}/{path:path} catch-all never shadows /api routes.
-app.include_router(proxy.router)
+if settings.ROLE != "node":
+    app.include_router(proxy.router)
+else:
+    from routers import node_data
+
+    app.include_router(node_data.router)
 
 
 @app.get("/api/health", tags=["health"])

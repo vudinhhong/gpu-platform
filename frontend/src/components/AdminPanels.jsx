@@ -122,28 +122,30 @@ export function ResourcesTab() {
               ? 'One limit is not being held by the kernel'
               : `${data.limit_divergences.length} limits are not being held by the kernel`}
           </p>
-          <table className="mt-2 w-full text-xs">
-            <thead>
-              <tr className="text-left text-red-700/70">
-                <th className="pr-4 pb-1 font-medium">User</th>
-                <th className="pr-4 pb-1 font-medium">Setting</th>
-                <th className="pr-4 pb-1 font-medium">Asked for</th>
-                <th className="pr-4 pb-1 font-medium">Kernel holds</th>
-                <th className="pb-1 font-medium">What it means</th>
-              </tr>
-            </thead>
-            <tbody className="text-red-900">
-              {data.limit_divergences.map((d, i) => (
-                <tr key={`${d.username}-${d.setting}-${i}`}>
-                  <td className="pr-4 py-0.5 font-medium">{d.username}</td>
-                  <td className="pr-4 py-0.5">{d.setting}</td>
-                  <td className="pr-4 py-0.5 font-mono">{d.configured}</td>
-                  <td className="pr-4 py-0.5 font-mono">{d.kernel}</td>
-                  <td className="py-0.5 text-red-700">{d.detail}</td>
+          <div className="overflow-x-auto">
+            <table className="mt-2 w-full text-xs">
+              <thead>
+                <tr className="text-left text-red-700/70">
+                  <th className="pr-4 pb-1 font-medium">User</th>
+                  <th className="pr-4 pb-1 font-medium">Setting</th>
+                  <th className="pr-4 pb-1 font-medium">Asked for</th>
+                  <th className="pr-4 pb-1 font-medium">Kernel holds</th>
+                  <th className="pb-1 font-medium">What it means</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="text-red-900">
+                {data.limit_divergences.map((d, i) => (
+                  <tr key={`${d.username}-${d.setting}-${i}`}>
+                    <td className="pr-4 py-0.5 font-medium">{d.username}</td>
+                    <td className="pr-4 py-0.5">{d.setting}</td>
+                    <td className="pr-4 py-0.5 font-mono">{d.configured}</td>
+                    <td className="pr-4 py-0.5 font-mono">{d.kernel}</td>
+                    <td className="py-0.5 text-red-700">{d.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <p className="mt-2 text-xs text-red-700">
             Stopping the workspace and starting it again removes the container
             and builds a new one, which is what puts the setting back.
@@ -953,56 +955,58 @@ export function TrashTab({ showToast }) {
         {users.length === 0 ? (
           <p className="text-sm text-gray-400">The trash is empty.</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b border-gray-200">
-                <th className="py-2 font-semibold">User</th>
-                <th className="py-2 font-semibold">Deleted</th>
-                <th className="py-2 font-semibold">Files</th>
-                <th className="py-2 font-semibold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td className="py-3">
-                    <p className="font-semibold text-gray-900">{u.username}</p>
-                    <p className="text-xs text-gray-400">{u.full_name || u.email}</p>
-                  </td>
-                  <td className="py-3 text-gray-600 text-xs">{fmtWhen(u.deleted_at)}</td>
-                  <td className="py-3 text-xs">
-                    {u.home_path ? (
-                      <span className="text-gray-600">
-                        Home directory <span className="font-mono">{u.home_path}</span>, kept as it is
-                      </span>
-                    ) : u.archive_exists ? (
-                      <span className="font-mono text-gray-600">
-                        {u.archived_workspace} <span className="text-gray-400">({fmtMb(u.size_mb)})</span>
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">no files kept</span>
-                    )}
-                  </td>
-                  <td className="py-3 text-right space-x-1">
-                    <button
-                      onClick={() => run(`restore-${u.id}`, () => restoreUser(u.id), 'Could not restore.')}
-                      disabled={busy !== null}
-                      className="text-xs font-medium text-emerald-700 hover:text-emerald-900 px-2 py-1 rounded hover:bg-emerald-50 disabled:opacity-50"
-                    >
-                      {busy === `restore-${u.id}` ? 'Restoring…' : 'Restore'}
-                    </button>
-                    <button
-                      onClick={() => setConfirm({ kind: 'user', user: u })}
-                      disabled={busy !== null}
-                      className="text-xs font-medium text-red-600 hover:text-red-800 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-50"
-                    >
-                      Delete permanently
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b border-gray-200">
+                  <th className="py-2 font-semibold">User</th>
+                  <th className="py-2 font-semibold">Deleted</th>
+                  <th className="py-2 font-semibold">Files</th>
+                  <th className="py-2 font-semibold text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {users.map((u) => (
+                  <tr key={u.id}>
+                    <td className="py-3">
+                      <p className="font-semibold text-gray-900">{u.username}</p>
+                      <p className="text-xs text-gray-400">{u.full_name || u.email}</p>
+                    </td>
+                    <td className="py-3 text-gray-600 text-xs">{fmtWhen(u.deleted_at)}</td>
+                    <td className="py-3 text-xs">
+                      {u.home_path ? (
+                        <span className="text-gray-600">
+                          Home directory <span className="font-mono">{u.home_path}</span>, kept as it is
+                        </span>
+                      ) : u.archive_exists ? (
+                        <span className="font-mono text-gray-600">
+                          {u.archived_workspace} <span className="text-gray-400">({fmtMb(u.size_mb)})</span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">no files kept</span>
+                      )}
+                    </td>
+                    <td className="py-3 text-right space-x-1">
+                      <button
+                        onClick={() => run(`restore-${u.id}`, () => restoreUser(u.id), 'Could not restore.')}
+                        disabled={busy !== null}
+                        className="text-xs font-medium text-emerald-700 hover:text-emerald-900 px-2 py-1 rounded hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        {busy === `restore-${u.id}` ? 'Restoring…' : 'Restore'}
+                      </button>
+                      <button
+                        onClick={() => setConfirm({ kind: 'user', user: u })}
+                        disabled={busy !== null}
+                        className="text-xs font-medium text-red-600 hover:text-red-800 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-50"
+                      >
+                        Delete permanently
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 
@@ -1012,37 +1016,39 @@ export function TrashTab({ showToast }) {
             Files belonging to accounts that no longer exist. Nothing on the platform can reach
             them, and they keep taking up space until they are removed here.
           </p>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b border-gray-200">
-                <th className="py-2 font-semibold">Directory</th>
-                <th className="py-2 font-semibold">Was</th>
-                <th className="py-2 font-semibold">Size</th>
-                <th className="py-2 font-semibold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {orphans.map((o) => (
-                <tr key={o.name}>
-                  <td className="py-3 font-mono text-xs text-gray-700">{o.name}</td>
-                  <td className="py-3 text-xs text-gray-500">
-                    {o.username}
-                    {o.deleted_at && <> · deleted {fmtWhen(o.deleted_at)}</>}
-                  </td>
-                  <td className="py-3 text-xs text-gray-600">{fmtMb(o.size_mb)}</td>
-                  <td className="py-3 text-right">
-                    <button
-                      onClick={() => setConfirm({ kind: 'directory', directory: o })}
-                      disabled={busy !== null}
-                      className="text-xs font-medium text-red-600 hover:text-red-800 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-50"
-                    >
-                      Delete permanently
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b border-gray-200">
+                  <th className="py-2 font-semibold">Directory</th>
+                  <th className="py-2 font-semibold">Was</th>
+                  <th className="py-2 font-semibold">Size</th>
+                  <th className="py-2 font-semibold text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {orphans.map((o) => (
+                  <tr key={o.name}>
+                    <td className="py-3 font-mono text-xs text-gray-700">{o.name}</td>
+                    <td className="py-3 text-xs text-gray-500">
+                      {o.username}
+                      {o.deleted_at && <> · deleted {fmtWhen(o.deleted_at)}</>}
+                    </td>
+                    <td className="py-3 text-xs text-gray-600">{fmtMb(o.size_mb)}</td>
+                    <td className="py-3 text-right">
+                      <button
+                        onClick={() => setConfirm({ kind: 'directory', directory: o })}
+                        disabled={busy !== null}
+                        className="text-xs font-medium text-red-600 hover:text-red-800 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-50"
+                      >
+                        Delete permanently
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
 

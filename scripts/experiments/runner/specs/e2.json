@@ -1,0 +1,42 @@
+[
+ {
+  "id": "e2-users",
+  "gpus": [],
+  "min_disk_gib": 8,
+  "timeout_min": 240,
+  "max_attempts": 20,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e2_users.py",
+   "--levels",
+   "1,2,4,8,16",
+   "--reps",
+   "3"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e2_cleanup.sh"
+  ]
+ },
+ {
+  "id": "e2-users-cached",
+  "gpus": [],
+  "min_disk_gib": 8,
+  "timeout_min": 240,
+  "max_attempts": 20,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e2_users.py",
+   "--levels",
+   "1,2,4,8,16",
+   "--reps",
+   "3"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e2_cleanup.sh"
+  ]
+ }
+]

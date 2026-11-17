@@ -89,6 +89,9 @@ class User(Base):
     # cpu_limit_seconds below is an RLIMIT_CPU ceiling the old process backend
     # applies to one process tree, which is a different thing entirely.
     cpu_hours_quota = Column(Float, nullable=True)
+    # The site whose nodes may run this user's work (docs/multi-node.md): a
+    # home lives on one site's NFS server.  NULL = settings.NODE_SITE.
+    site            = Column(String(64), nullable=True)
     # Preferred Jupyter image (validated against the platform allow-list).
     preferred_image = Column(String(255), nullable=True)
 
@@ -185,6 +188,11 @@ class GpuAssignment(Base):
     # DataLoader with many workers runs into, so it has to be per-user rather
     # than one number for the whole platform.  NULL = CONTAINER_PIDS_LIMIT.
     max_processes     = Column(Integer, nullable=True)
+    # Most GPU memory the workspace may take on each of its cards, refused at
+    # the allocation when GPU_HARD_VRAM_LIMIT is on.  NULL = the whole card.
+    gpu_memory_limit_mb = Column(Integer, nullable=True)
+    # Node whose GPUs gpu_indices names; NULL = the master.
+    node_id           = Column(Integer, nullable=True)
     created_at      = Column(DateTime, default=datetime.utcnow,  nullable=False)
     updated_at      = Column(DateTime, default=datetime.utcnow,
                              onupdate=datetime.utcnow, nullable=False)
@@ -210,6 +218,8 @@ class JupyterSession(Base):
     # rows still load; nothing writes it, and a row that has one is not running.
     pid           = Column(Integer, nullable=True)
     container_id  = Column(String(128), nullable=True)
+    # Node the workspace container runs on; NULL = the master.
+    node_id       = Column(Integer, nullable=True)
     image         = Column(String(255), nullable=True)  # image actually used
     ssh_port      = Column(Integer, nullable=True)      # host port for sshd
     # Encrypted at rest (services.crypto), shown back to its owner only.
@@ -301,6 +311,8 @@ class Job(Base):
     gpu_count       = Column(Integer, default=1, nullable=False)
     gpu_memory_mb   = Column(Integer, default=0, nullable=False)
     gpu_indices     = Column(String(64), nullable=True)   # filled at dispatch
+    # The node those indices are on, filled at dispatch; NULL = the master.
+    node_id         = Column(Integer, nullable=True, index=True)
     # Whether this job is held to its gpu_memory_mb figure.  True for
     # everything submitted since the reservation became binding; False for the
     # jobs that were already in the system when it did.  A run started under a
@@ -365,3 +377,50 @@ class AuditLog(Base):
 
     def __repr__(self) -> str:
         return f"<AuditLog {self.action} actor={self.actor!r} target={self.target!r}>"
+
+
+class Node(Base):
+    """A machine whose GPUs and CPUs the platform schedules onto.
+
+    The master is one too (``is_local``), created at start-up, so a job always
+    has a node and the single-machine installation is the one-node case of the
+    same code.  Other nodes join with a token (JoinToken) and from then on
+    authenticate with a secret only its hash of which is kept here.
+    """
+
+    __tablename__ = "nodes"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    name         = Column(String(128), unique=True, nullable=False)
+    site         = Column(String(64), nullable=False, default="default")
+    is_local     = Column(Boolean, default=False, nullable=False)
+    # ready | draining (no new work, running work stays) | removed
+    state        = Column(String(16), default="ready", nullable=False)
+    secret_hash  = Column(String(128), nullable=True)
+    # Where the master reaches the node's data port (Jupyter proxy).
+    data_url     = Column(String(255), nullable=True)
+    # Key the master signs proxied requests with (services.crypto, encrypted).
+    # Unlike the node's secret it has to be readable here, to sign with.
+    proxy_key    = Column(Text, nullable=True)
+    # What the node said it has when it joined (JSON): GPUs, cores, RAM, driver.
+    inventory    = Column(Text, nullable=True)
+    joined_at    = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen    = Column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<Node {self.name!r} site={self.site!r} state={self.state}>"
+
+
+class JoinToken(Base):
+    """A single-use, expiring invitation for one machine to become a node."""
+
+    __tablename__ = "join_tokens"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    token_hash = Column(String(128), unique=True, nullable=False)
+    site       = Column(String(64), nullable=False, default="default")
+    created_by = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at    = Column(DateTime, nullable=True)
+    node_id    = Column(Integer, nullable=True)

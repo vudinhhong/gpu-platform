@@ -150,6 +150,38 @@ A few things worth knowing:
 * Deactivating instead of deleting cuts off their access at once, including
   the notebook they have open, and keeps everything else as it is.
 
+### Signing in with Google
+
+People can also sign in with a Google account (or any OpenID Connect
+provider) instead of typing their password. It never creates an account: the
+provider's verified email has to be the email you gave the account, so
+whoever you have not created still cannot get in. The password keeps working
+beside it, and SSH and JupyterLab are unaffected.
+
+1. In Google Cloud Console, *APIs & Services → Credentials → Create
+   credentials → OAuth client ID*, type *Web application*:
+   * Authorized JavaScript origin: `https://<your host>`
+   * Authorized redirect URI: `https://<your host>/api/auth/oidc/callback`
+
+   On the consent screen choose *Internal* if your accounts belong to a Google
+   Workspace organisation; otherwise *External*, with the people's addresses as
+   test users. The scopes needed are `openid`, `email` and `profile`.
+2. Put the client in `.env` and restart the backend:
+
+   ```
+   OIDC_CLIENT_ID=<client id>
+   OIDC_CLIENT_SECRET=<client secret>
+   OIDC_REDIRECT_URL=https://<your host>/api/auth/oidc/callback
+   OIDC_ALLOWED_DOMAINS=example.edu      # optional
+   ```
+
+   The login page then shows *Sign in with Google*. For another provider set
+   `OIDC_ISSUER` to its issuer URL and `OIDC_LABEL` to the name on the button.
+
+A failed attempt says why on the login page (no account with that email, a
+domain not in `OIDC_ALLOWED_DOMAINS`, a deactivated account) and is recorded
+in the audit log like a failed password.
+
 ---
 
 ## 5. Quotas, and what to set them to
@@ -272,6 +304,22 @@ What you can control:
   than it asked for. The default stops it and tells the owner what it really
   used. Setting it to `warn` makes reservations advisory, which in practice
   means they stop being true.
+* `GPU_HARD_VRAM_LIMIT=true` refuses the allocation itself instead: a job that
+  asks for more than its allowance gets an ordinary CUDA out-of-memory error at
+  that `cudaMalloc`, and the job beside it on the card is never short. It uses
+  [HAMi-core](https://github.com/Project-HAMi/HAMi-core), which `deploy.sh`
+  builds for your driver, tries on one of your GPUs, and uses only if an
+  allocation past a test limit was refused; after a driver upgrade, run
+  `./deploy.sh` again and it rebuilds. The same option lets an assignment cap a
+  workspace's memory per card (**GPU memory per GPU** in the assignment form).
+  Three things to know:
+  * the images in `JUPYTER_IMAGES` need glibc 2.34 or later (Ubuntu 22.04,
+    Debian 12, RHEL 9 or newer; not Alpine). An older image still works, with
+    the after-the-fact check only, and the backend log says so;
+  * it is not a security boundary. A statically linked program or one that
+    talks to the driver directly is not held by it, which is why the
+    after-the-fact check above stays on;
+  * the first build downloads a 9 GB CUDA image and deletes it afterwards.
 * The four fair-share parameters (`FAIRSHARE_*`) set how strongly recent usage
   pushes somebody down the queue. The defaults suit a group where people work
   in bursts; the README explains each one.

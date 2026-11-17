@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { loginRequest } from '../api/index.js'
+import { loginRequest, oidcConfigRequest, oidcExchangeRequest } from '../api/index.js'
 import { useAuth } from '../App.jsx'
 
 // ---------------------------------------------------------------------------
@@ -38,6 +38,33 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState(null)
+  const [oidc, setOidc]           = useState({ enabled: false, label: '' })
+
+  const finish = (user, token) => {
+    login(user, token)
+    navigate(user?.is_admin ? '/admin' : '/', { replace: true })
+  }
+
+  // Coming back from the identity provider: either a one-minute hand-off
+  // token in the fragment, or the reason it failed in the query string.
+  useEffect(() => {
+    oidcConfigRequest().then((res) => setOidc(res.data)).catch(() => {})
+    const params = new URLSearchParams(window.location.search)
+    const failed = params.get('oidc_error')
+    const handoff = new URLSearchParams(window.location.hash.slice(1)).get('oidc')
+    if (failed || handoff) window.history.replaceState(null, '', '/login')
+    if (failed) setError(failed)
+    if (handoff) {
+      setLoading(true)
+      oidcExchangeRequest(handoff)
+        .then((res) => finish(res.data.user, res.data.access_token))
+        .catch((err) => {
+          const detail = err.response?.data?.detail
+          setError(typeof detail === 'string' ? detail : 'Sign-in failed. Please try again.')
+          setLoading(false)
+        })
+    }
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -51,8 +78,7 @@ export default function Login() {
     try {
       const res = await loginRequest(username.trim(), password)
       const { access_token, user } = res.data
-      login(user, access_token)
-      navigate(user?.is_admin ? '/admin' : '/', { replace: true })
+      finish(user, access_token)
     } catch (err) {
       const detail = err.response?.data?.detail
       setError(typeof detail === 'string' ? detail : 'Login failed. Please try again.')
@@ -162,6 +188,25 @@ export default function Login() {
               <span>{loading ? 'Signing in…' : 'Sign in'}</span>
             </button>
           </form>
+
+          {oidc.enabled && (
+            <>
+              <div className="flex items-center my-5">
+                <div className="flex-1 border-t border-gray-200" />
+                <span className="px-3 text-xs text-gray-400">or</span>
+                <div className="flex-1 border-t border-gray-200" />
+              </div>
+              <a
+                href="/api/auth/oidc/login"
+                className={`w-full flex items-center justify-center border border-gray-300 hover:bg-gray-50 text-gray-700 py-2.5 px-4 rounded-lg font-semibold text-sm transition-colors ${loading ? 'pointer-events-none opacity-60' : ''}`}
+              >
+                Sign in with {oidc.label}
+              </a>
+              <p className="text-xs text-gray-400 mt-2 text-center">
+                Your account's email must be the one you use there.
+              </p>
+            </>
+          )}
         </div>
 
         <p className="text-center text-indigo-300/70 text-xs mt-6">

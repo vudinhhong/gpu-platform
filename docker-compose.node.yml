@@ -1,0 +1,17 @@
+# Node override, merged by `deploy.sh --join` on a machine that joins a master
+# (docs/multi-node.md).  Only the backend runs here, as the node agent: no web
+# tier, no accounts, no queue of its own.
+#
+# The data port is how the master reaches the workspaces on this machine.  It
+# answers only requests the master signed, but it is still best kept to the
+# LAN: NODE_DATA_BIND is the address to publish it on.
+services:
+  backend:
+    environment:
+      - ROLE=node
+      - MASTER_URL=${MASTER_URL}
+      - JOIN_TOKEN=${JOIN_TOKEN:-}
+      - NODE_GPUS=${NODE_GPUS:-}
+      - NODE_DATA_URL=${NODE_DATA_URL:-}
+    ports:
+      - "${NODE_DATA_BIND:-0.0.0.0}:${NODE_DATA_PORT:-8100}:8000"

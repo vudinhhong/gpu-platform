@@ -1,0 +1,59 @@
+[
+ {
+  "id": "e3-slurm-2311-s1",
+  "gpus": [],
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 10,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "slurm",
+   "--seed",
+   "1"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ },
+ {
+  "id": "e3-slurm-2311-s2",
+  "gpus": [],
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 10,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "slurm",
+   "--seed",
+   "2"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ },
+ {
+  "id": "e3-slurm-2311-s3",
+  "gpus": [],
+  "min_disk_gib": 8,
+  "timeout_min": 120,
+  "max_attempts": 10,
+  "cmd": [
+   "python3",
+   "-u",
+   "scripts/experiments/e3_fairshare.py",
+   "slurm",
+   "--seed",
+   "3"
+  ],
+  "cleanup": [
+   "bash",
+   "scripts/experiments/e3_cleanup.sh"
+  ]
+ }
+]

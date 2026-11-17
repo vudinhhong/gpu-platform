@@ -1,0 +1,291 @@
+{
+ "runs": [
+  {
+   "system": "platform",
+   "policy": "fairshare",
+   "seed": 1,
+   "meta": {
+    "system": "platform",
+    "policy": "fairshare",
+    "gpu": 1,
+    "free_mib_at_start": 49125,
+    "users": 8,
+    "seed": 1,
+    "hours": 24.0,
+    "scale": 60.0,
+    "jobs": 119,
+    "started": "2026-11-10T01:55:02+0800",
+    "elapsed_s": 1685
+   },
+   "light_mean_min": 11.5,
+   "heavy_mean_min": 196.1,
+   "light_p90_min": 35,
+   "finished": 119,
+   "jobs": 119,
+   "path": "runs/e3-platform-fairshare-s1/20261110T015502/e3_run.json"
+  },
+  {
+   "system": "platform",
+   "policy": "fairshare",
+   "seed": 2,
+   "meta": {
+    "system": "platform",
+    "policy": "fairshare",
+    "gpu": 1,
+    "free_mib_at_start": 49125,
+    "users": 8,
+    "seed": 2,
+    "hours": 24.0,
+    "scale": 60.0,
+    "jobs": 128,
+    "started": "2026-11-10T03:15:01+0800",
+    "elapsed_s": 1537
+   },
+   "light_mean_min": 16.6,
+   "heavy_mean_min": 199.6,
+   "light_p90_min": 40,
+   "finished": 128,
+   "jobs": 128,
+   "path": "runs/e3-platform-fairshare-s2/20261110T031501/e3_run.json"
+  },
+  {
+   "system": "platform",
+   "policy": "fairshare",
+   "seed": 3,
+   "meta": {
+    "system": "platform",
+    "policy": "fairshare",
+    "gpu": 1,
+    "free_mib_at_start": 49125,
+    "users": 8,
+    "seed": 3,
+    "hours": 24.0,
+    "scale": 60.0,
+    "jobs": 138,
+    "started": "2026-11-10T00:05:02+0800",
+    "elapsed_s": 1755
+   },
+   "light_mean_min": 60.9,
+   "heavy_mean_min": 369.3,
+   "light_p90_min": 193,
+   "finished": 138,
+   "jobs": 138,
+   "path": "runs/e3-platform-fairshare-s3/20261110T000501/e3_run.json"
+  },
+  {
+   "system": "platform",
+   "policy": "fifo",
+   "seed": 1,
+   "meta": {
+    "system": "platform",
+    "policy": "fifo",
+    "gpu": 1,
+    "free_mib_at_start": 49125,
+    "users": 8,
+    "seed": 1,
+    "hours": 24.0,
+    "scale": 60.0,
+    "jobs": 119,
+    "started": "2026-11-09T11:50:01+0800",
+    "elapsed_s": 1687
+   },
+   "light_mean_min": 39.3,
+   "heavy_mean_min": 185.1,
+   "light_p90_min": 118,
+   "finished": 119,
+   "jobs": 119,
+   "path": "runs/e3-platform-fifo-s1/20261109T115001/e3_run.json"
+  },
+  {
+   "system": "platform",
+   "policy": "fifo",
+   "seed": 2,
+   "meta": {
+    "system": "platform",
+    "policy": "fifo",
+    "gpu": 1,
+    "free_mib_at_start": 49125,
+    "users": 8,
+    "seed": 2,
+    "hours": 24.0,
+    "scale": 60.0,
+    "jobs": 128,
+    "started": "2026-11-10T02:35:01+0800",
+    "elapsed_s": 1536
+   },
+   "light_mean_min": 30.3,
+   "heavy_mean_min": 140.2,
+   "light_p90_min": 88,
+   "finished": 128,
+   "jobs": 128,
+   "path": "runs/e3-platform-fifo-s2/20261110T023501/e3_run.json"
+  },
+  {
+   "system": "platform",
+   "policy": "fifo",
+   "seed": 3,
+   "meta": {
+    "system": "platform",
+    "policy": "fifo",
+    "gpu": 1,
+    "free_mib_at_start": 49125,
+    "users": 8,
+    "seed": 3,
+    "hours": 24.0,
+    "scale": 60.0,
+    "jobs": 138,
+    "started": "2026-11-09T23:20:01+0800",
+    "elapsed_s": 1810
+   },
+   "light_mean_min": 81.7,
+   "heavy_mean_min": 178.6,
+   "light_p90_min": 196,
+   "finished": 138,
+   "jobs": 138,
+   "path": "runs/e3-platform-fifo-s3/20261109T232001/e3_run.json"
+  },
+  {
+   "system": "slurm",
+   "policy": "multifactor",
+   "seed": 1,
+   "meta": {
+    "system": "slurm",
+    "policy": "multifactor",
+    "mem_mib": 48628,
+    "version": "23.11.4",
+    "seed": 1,
+    "users": 8,
+    "hours": 24.0,
+    "scale": 60.0,
+    "jobs": 119,
+    "started": "2026-11-12T11:15:01+0800",
+    "elapsed_s": 1640
+   },
+   "light_mean_min": 11.2,
+   "heavy_mean_min": 261.6,
+   "light_p90_min": 34.0,
+   "finished": 119,
+   "jobs": 119,
+   "path": "runs/e3-slurm-2311-s1/20261112T111501/e3_run.json"
+  },
+  {
+   "system": "slurm",
+   "policy": "multifactor",
+   "seed": 2,
+   "meta": {
+    "system": "slurm",
+    "policy": "multifactor",
+    "mem_mib": 48628,
+    "version": "23.11.4",
+    "seed": 2,
+    "users": 8,
+    "hours": 24.0,
+    "scale": 60.0,
+    "jobs": 128,
+    "started": "2026-11-12T11:55:01+0800",
+    "elapsed_s": 1488
+   },
+   "light_mean_min": 20.2,
+   "heavy_mean_min": 259.9,
+   "light_p90_min": 66.0,
+   "finished": 128,
+   "jobs": 128,
+   "path": "runs/e3-slurm-2311-s2/20261112T115501/e3_run.json"
+  },
+  {
+   "system": "slurm",
+   "policy": "multifactor",
+   "seed": 3,
+   "meta": {
+    "system": "slurm",
+    "policy": "multifactor",
+    "mem_mib": 48628,
+    "version": "23.11.4",
+    "seed": 3,
+    "users": 8,
+    "hours": 24.0,
+    "scale": 60.0,
+    "jobs": 138,
+    "started": "2026-11-12T12:35:01+0800",
+    "elapsed_s": 1774
+   },
+   "light_mean_min": 108.4,
+   "heavy_mean_min": 572.6,
+   "light_p90_min": 304.0,
+   "finished": 138,
+   "jobs": 138,
+   "path": "runs/e3-slurm-2311-s3/20261112T123501/e3_run.json"
+  }
+ ],
+ "simulated": {
+  "1": {
+   "fifo": {
+    "light_mean_min": 32.1,
+    "heavy_mean_min": 175.7,
+    "light_p90_min": 105.4,
+    "finished": 119,
+    "jobs": 119
+   },
+   "slurm": {
+    "light_mean_min": 14.9,
+    "heavy_mean_min": 190.1,
+    "light_p90_min": 38.5,
+    "finished": 119,
+    "jobs": 119
+   },
+   "platform": {
+    "light_mean_min": 14.9,
+    "heavy_mean_min": 190.1,
+    "light_p90_min": 38.5,
+    "finished": 119,
+    "jobs": 119
+   }
+  },
+  "2": {
+   "fifo": {
+    "light_mean_min": 25.3,
+    "heavy_mean_min": 135.2,
+    "light_p90_min": 86.1,
+    "finished": 128,
+    "jobs": 128
+   },
+   "slurm": {
+    "light_mean_min": 13.5,
+    "heavy_mean_min": 186.1,
+    "light_p90_min": 46.6,
+    "finished": 128,
+    "jobs": 128
+   },
+   "platform": {
+    "light_mean_min": 13.5,
+    "heavy_mean_min": 186.1,
+    "light_p90_min": 46.6,
+    "finished": 128,
+    "jobs": 128
+   }
+  },
+  "3": {
+   "fifo": {
+    "light_mean_min": 71.7,
+    "heavy_mean_min": 155.9,
+    "light_p90_min": 162.6,
+    "finished": 138,
+    "jobs": 138
+   },
+   "slurm": {
+    "light_mean_min": 49.3,
+    "heavy_mean_min": 321.9,
+    "light_p90_min": 153.3,
+    "finished": 138,
+    "jobs": 138
+   },
+   "platform": {
+    "light_mean_min": 49.3,
+    "heavy_mean_min": 321.9,
+    "light_p90_min": 153.3,
+    "finished": 138,
+    "jobs": 138
+   }
+  }
+ }
+}

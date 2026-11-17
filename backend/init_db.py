@@ -61,6 +61,12 @@ _COLUMN_MIGRATIONS = [
     ("jobs",             "gpu_memory_peak_mb",  "INTEGER"),
     ("users",            "cpu_hours_quota",     "FLOAT"),
     ("jobs",             "runtime_seconds",     "FLOAT NOT NULL DEFAULT 0"),
+    ("gpu_assignments",  "gpu_memory_limit_mb", "INTEGER"),
+    ("gpu_assignments",  "node_id",             "INTEGER"),
+    ("jobs",             "node_id",             "INTEGER"),
+    ("jupyter_sessions", "node_id",             "INTEGER"),
+    ("nodes",            "proxy_key",           "TEXT"),
+    ("users",            "site",                "VARCHAR(64)"),
 ]
 
 
