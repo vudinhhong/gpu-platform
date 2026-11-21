@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- The messages about a job's GPU memory say that other jobs were placed
+  beside it on the basis of its request, instead of "on that figure".
+
 ## 1.3.1
 
 ### Changed

@@ -91,7 +91,7 @@ function jobRisks(job) {
             + (job.gpu_memory_enforced
               ? `, and is stopped past ${gb(allowance)}. Cancel it and resubmit `
                 + 'with a higher --gpu-memory.'
-              : '. The scheduler fitted other work beside it on that figure, so '
+              : '. Other jobs were placed beside it on the basis of that request, so '
                 + 'resubmit with a higher --gpu-memory.')
           : `is holding ${gb(used)} of the ${gb(asked)} GPU memory it asked for.`,
       })

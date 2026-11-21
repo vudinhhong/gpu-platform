@@ -988,8 +988,8 @@ allowance to well past it. Sampling faster does not close that gap; the residual
 is the size of one allocation, not the length of the interval.
 
 > Stopped: it was holding 30000 MiB of GPU memory after asking for 4096 MiB, and
-> the scheduler had fitted other work beside it on that figure. Run it again
-> with --gpu-memory 30208.
+> other jobs had been placed beside it on the basis of that request. Run it
+> again with --gpu-memory 30208.
 
 Without enforcement a smaller request is placed sooner, and the job admitted
 into the space another job claimed not to need is the one that runs out of

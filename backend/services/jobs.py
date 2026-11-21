@@ -254,9 +254,9 @@ def submit(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     "This job asks for a GPU but not for an amount of GPU memory. "
-                    "Add --gpu-memory MB (for example --gpu-memory 20000). The "
-                    "scheduler fits other work around that figure, so it has to "
-                    "be stated. Without a GPU at all, the job runs on CPU."
+                    "Add --gpu-memory MB (for example --gpu-memory 20000). Other "
+                    "jobs are placed beside it on the basis of that amount, so it "
+                    "has to be stated. Without a GPU at all, the job runs on CPU."
                 ),
             )
         gpu_count = 0
@@ -1033,11 +1033,11 @@ def _check_gpu_overrun(db, job: "models.Job") -> Optional[str]:
     suggested = ((used + 511) // 512) * 512
 
     if not enforcing:
-        # Rewritten every time the figure moves, not written once and left:
+        # Rewritten every time the reading moves, not written once and left:
         # this note is a description of the present, and a stale one is worse
         # than none because it is read as current.
-        note = (f"This job is {detail}. The scheduler fitted other work beside it "
-                f"on that figure, so please resubmit with --gpu-memory {suggested}.")
+        note = (f"This job is {detail}. Other jobs were placed beside it on the basis of "
+                f"that request, so please resubmit with --gpu-memory {suggested}.")
         if job.message == note:
             return outcome
         job.message = note
@@ -1049,8 +1049,8 @@ def _check_gpu_overrun(db, job: "models.Job") -> Optional[str]:
     # reason rather than closing it a second time as "exited with code 143".
     # Committing here also keeps the database unlocked while docker stops it.
     if not _close(db, job, models.JobStatus.failed, None,
-                  f"Stopped: it was {detail}, and the scheduler had fitted other work "
-                  f"beside it on that figure. Run it again with --gpu-memory {suggested}."):
+                  f"Stopped: it was {detail}, and other jobs had been placed beside it "
+                  f"on the basis of that request. Run it again with --gpu-memory {suggested}."):
         return None
     audit.record(db, "job.gpu_overrun_stopped", actor="system",
                  target=f"job:{job.id}", detail=detail, commit=False)
