@@ -1397,7 +1397,8 @@ If the platform is useful in work you publish, please cite it using
 [`CITATION.cff`](CITATION.cff) (GitHub's *Cite this repository* button reads
 it). Every release is archived on Zenodo: [10.5281/zenodo.23570943](https://doi.org/10.5281/zenodo.23570943)
 always resolves to the latest one, and each release also has a DOI of its own
-(v1.3.0: [10.5281/zenodo.24297490](https://doi.org/10.5281/zenodo.24297490);
+(v1.3.1: [10.5281/zenodo.24409341](https://doi.org/10.5281/zenodo.24409341);
+v1.3.0: [10.5281/zenodo.24297490](https://doi.org/10.5281/zenodo.24297490);
 v1.2.0: [10.5281/zenodo.23607043](https://doi.org/10.5281/zenodo.23607043);
 v1.1.0: [10.5281/zenodo.23570944](https://doi.org/10.5281/zenodo.23570944)).
 
