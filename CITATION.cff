@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use GPU Platform in work you publish, please cite it as below."
 title: "GPU Platform: enforced multi-tenancy for shared GPU workstations"
-version: 1.3.0
-date-released: 2026-11-17
+version: 1.3.1
+date-released: 2026-11-21
 type: software
 authors:
   - family-names: Vu

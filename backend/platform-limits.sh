@@ -18,8 +18,8 @@ human() {  # bytes -> human readable
 # Allocations the kernel cannot express (disk space) are published here by the
 # platform and kept current, so a change shows up without restarting.
 # /platform is the platform's own directory, mounted beside the workspace.
-# The older in-workspace path is still read so a container from before the
-# change keeps working until it is next recreated.
+# The in-workspace path is also read, for containers created before /platform
+# existed, until they are next recreated.
 [ -r /platform/limits.env ] && . /platform/limits.env
 [ -r /workspace/.platform/limits.env ] && . /workspace/.platform/limits.env
 # Written separately and far more often: hours used move every minute a
@@ -27,8 +27,8 @@ human() {  # bytes -> human readable
 [ -r /platform/budget.env ] && . /platform/budget.env
 
 # Where this workspace is mounted.  The limits file above names it; $HOME is
-# the same thing for anyone running this interactively, and the old fixed path
-# is the last resort for a container created before workspaces moved.
+# the same thing for anyone running this interactively, and /workspace is the
+# last resort for a container created before workspaces were mounted at home.
 WS="${PLATFORM_HOME:-${HOME:-/workspace}}"
 
 CG=/sys/fs/cgroup

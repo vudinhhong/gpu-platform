@@ -86,14 +86,14 @@ _GIB = 1024 ** 3
 def _data_disk() -> Dict[str, Any]:
     """Free space on the volume holding the per-user data directory.
 
-    Reported the way ``df`` reports it, deliberately:
+    Reported the way ``df`` reports it:
 
     * **GiB, not decimal GB**, otherwise the dashboard and `df` disagree by 7%
       for no reason a reader can see.
     * **percent = used / (used + available)**, which is what `df` prints. A
       filesystem reserves blocks for root (5% by default on ext4, 46 GiB
-      here), and counting those as free understated how full the disk was by
-      more than five points, exactly when it mattered most.
+      here), and counting those as free would understate how full the disk
+      is by more than five points, exactly when it matters most.
     """
     try:
         usage = shutil.disk_usage(settings.JUPYTER_DATA_DIR)

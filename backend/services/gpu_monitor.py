@@ -59,10 +59,10 @@ def _run(cmd: List[str], timeout: int = 10) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Telemetry state
 #
-# A failed nvidia-smi is not the same fact as "this machine has no GPUs", and
-# the platform used to report them identically: one unreadable call and every
-# dashboard said the cards were gone, which is exactly what it looks like when
-# systemd revokes a running container's device access.  The last good reading
+# A failed nvidia-smi is not the same fact as "this machine has no GPUs".
+# Reporting them the same way would make every dashboard say the cards were
+# gone after one unreadable call, which is also what happens when systemd
+# revokes a running container's device access.  The last good reading
 # is kept so the UI can show the cards and label them stale, and the scheduler
 # is told separately never to place work against a figure it cannot refresh.
 # ---------------------------------------------------------------------------
@@ -313,8 +313,8 @@ def pid_owner_map() -> Dict[int, Dict[str, str]]:
     """``{host_pid: {"user": ..., "cmd": ...}}`` for every user container.
 
     ``nvidia-smi`` reports host-namespace PIDs while user workloads live in
-    their own PID namespace, so a raw ``/proc`` lookup used to yield
-    ``unknown`` for everything.  ``docker top`` bridges the two namespaces.
+    their own PID namespace, so a raw ``/proc`` lookup yields ``unknown`` for
+    everything.  ``docker top`` bridges the two namespaces.
     """
     if time.monotonic() - _OWNER_CACHE["at"] < _OWNER_TTL:
         return _OWNER_CACHE["map"]
@@ -364,7 +364,7 @@ def platform_uid_map() -> Dict[int, str]:
     host account, so the only honest way to say whose it is is the uid an
     administrator already tied to that account by mapping their home directory.
 
-    Users without a mapping are deliberately absent: their workspace uid is the
+    Users without a mapping are left out: their workspace uid is the
     container's own, which belongs to nobody on the host, and claiming host
     processes with it would put somebody else's work under their name.
     """

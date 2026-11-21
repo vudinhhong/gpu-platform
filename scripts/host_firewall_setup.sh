@@ -21,7 +21,7 @@
 #
 # That is all the platform needs.  Return traffic is already covered by the
 # existing `--state RELATED,ESTABLISHED` rule in INPUT, so this script
-# deliberately does NOT open INPUT from the bridge: user containers run
+# does NOT open INPUT from the bridge: user containers run
 # untrusted code and must not be able to *initiate* connections to services on
 # the host (databases, other stacks, sshd).  Verify after running:
 #
@@ -32,7 +32,7 @@
 # Per-user SSH publishes ports SSH_PORT_START..SSH_PORT_END on all interfaces.
 # A default-DROP INPUT policy blocks them too.  Pass --with-ssh to open that
 # range on the external interface.  Left off by default: exposing a port range
-# to the internet is a decision the operator should make deliberately.
+# to the internet is a decision for the operator.
 #
 # USAGE
 #   sudo bash scripts/host_firewall_setup.sh              # the required rule

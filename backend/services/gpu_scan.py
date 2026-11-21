@@ -3,11 +3,11 @@
 Asking each container for its own VRAM costs a ``docker exec`` per job, and
 the exec dominates: on the reference host it is 80-110 ms against 30-40 ms for
 a single host-wide query that covers every card and every process at once.
-The old way therefore grew with the number of jobs, which is what kept the
-overrun check on a ten-second cycle -- and ten seconds is a long time for a
-``cudaMalloc``.  A job could be several gigabytes past its allowance before
-anything looked, and the neighbour the scheduler had fitted beside it on the
-strength of its stated figure was the one that died of it.
+Per-container queries grow with the number of jobs, which would hold the
+overrun check to a ten-second cycle, and ten seconds is a long time for a
+``cudaMalloc``: a job can be several gigabytes past its allowance before
+anything looks, and the neighbour fitted beside it on the strength of its
+stated figure is the one that dies of it.
 
 This asks once and maps the answer back:
 

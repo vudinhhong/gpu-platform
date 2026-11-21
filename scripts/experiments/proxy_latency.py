@@ -14,7 +14,7 @@ Measured on each path, interleaved so host load affects all three alike:
                    kernel WebSocket, N round trips on one connection
     download_mbs   one 256 MiB file through the files endpoint
 
-    python3 scripts/experiments/proxy_latency.py --n 300 --out paper/data/proxy.json
+    python3 scripts/experiments/proxy_latency.py --n 300 --out scripts/experiments/results/proxy.json
 """
 
 import argparse
@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import platform_api as api  # noqa: E402
 
 USER = "expc"
-PASSWORD = "Experiment-pass-1"
+PASSWORD = api.experiment_password()
 
 
 def env_of(container, key):

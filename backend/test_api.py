@@ -321,7 +321,7 @@ def test_full_admin_workflow(client):
     )
     assert res.status_code == 400
 
-    # Regression: EVERY index is validated, not just the largest one.
+    # EVERY index is validated, not just the largest one.
     res = client.put(
         f"/api/admin/gpu/assignments/{assignment_id}",
         headers=_auth(token),
@@ -348,8 +348,8 @@ def test_full_admin_workflow(client):
     assert res.status_code == 200
     assert [g["index"] for g in res.json()] == [1]
 
-    # …and the shared GPU endpoint is scoped for his too (it used to return
-    # every GPU, including othis users' process lists).
+    # …and the shared GPU endpoint is scoped for him too (it must not return
+    # other users' GPUs or their process lists).
     res = client.get("/api/gpu/status", headers=_auth(walter_token))
     assert [g["index"] for g in res.json()] == [1]
 
@@ -395,9 +395,9 @@ def test_jupyter_lifecycle(client):
 def test_a_missing_workspace_image_refuses_instead_of_falling_back(client, monkeypatch):
     """No image, no workspace.
 
-    This used to fall back to a second backend that ran Jupyter as a subprocess
-    beside every other user's, so a missing image quietly cost everyone their
-    isolation.  That backend is gone; the only honest answer is to refuse.
+    There is no fallback that runs Jupyter as a subprocess beside every other
+    user's, since that would quietly cost everyone their isolation; the start
+    is refused instead.
     """
     token = _login(client, "admin", ADMIN_PW)
     client.post("/api/user/me/jupyter/stop", headers=_auth(token), json={})
@@ -466,10 +466,9 @@ def test_admin_sessions_and_force_stop(client):
 def test_disk_quota_costs_the_gpu_not_the_workspace(client, alice, monkeypatch):
     """Over budget must not lock a user out of their own files.
 
-    This used to assert a 429 on start.  That was the bug: the refusal told
-    the user to delete files and simultaneously denied them the only place
-    they could delete files from.  Being over disk now costs the GPU and the
-    job queue instead.
+    Refusing the start would tell the user to delete files while denying them
+    the only place they can delete files from.  Being over disk costs the GPU
+    and the job queue instead.
     """
     token = _login(client, "admin", ADMIN_PW)
     res = client.get("/api/admin/users", headers=_auth(token))
@@ -639,7 +638,7 @@ def test_password_reset_and_change(client, alice):
 
 
 def test_deactivation_revokes_live_tokens(client, alice):
-    """A deactivated user used to keep working until their JWT expired."""
+    """A deactivated user is cut off at once, not when their JWT expires."""
     admin_token = _login(client, "admin", ADMIN_PW)
     res = client.get("/api/admin/users", headers=_auth(admin_token))
     alice_id = next(u["id"] for u in res.json() if u["username"] == "alice")
@@ -779,9 +778,8 @@ def test_changing_the_password_refreshes_derived_credentials(client, unified):
 
 
 def test_cpu_cores_is_separate_from_the_cpu_seconds_budget(client):
-    """Regression: the assignment form's only CPU field used to be
-    `cpu_limit_seconds`, and the container backend turned it into cores with
-    `seconds / 3600` floored at 0.25, so an admin asking for 4 cores got 0.25."""
+    """An admin asking for 4 cores gets 4 cores: `cpu_cores` is its own field,
+    not `cpu_limit_seconds` translated with `seconds / 3600`."""
     token = _login(client, "admin", ADMIN_PW)
     res = client.post("/api/admin/users", headers=_auth(token), json={
         "username": "cpucores", "email": "cpucores@local", "password": "Cputest-pass-1",
@@ -962,11 +960,11 @@ def test_usage_records_cpu_time_for_gpu_less_work(client):
 def test_fair_share_counts_a_stretch_longer_than_the_window(client):
     """A job older than the window still owes for the hours inside it.
 
-    Selecting usage rows by ``started_at`` dropped any stretch that began before
-    the window, so a job running longer than ``FAIRSHARE_WINDOW_HOURS`` made its
-    owner look idle and sent them to the *front* of the queue -- and the moment
-    it ended its whole ledger row was already out of range.  The window is a
-    window on time, not on start times: only the part outside it is forgiven.
+    Selecting usage rows by ``started_at`` would drop any stretch that began
+    before the window, so a job running longer than ``FAIRSHARE_WINDOW_HOURS``
+    would make its owner look idle and send them to the *front* of the queue,
+    and the moment it ended its whole ledger row would be out of range.  The
+    window is on time, not on start times: only the part outside it is forgiven.
     """
     from datetime import datetime, timedelta
 
@@ -1109,10 +1107,10 @@ def test_ssh_port_belongs_to_the_workspace_it_was_given_to(monkeypatch):
 
     An SSH client keys ``known_hosts`` by host *and* port, so moving a workspace
     to another port makes every client that has ever connected announce that the
-    host key has changed -- indistinguishable, from the user's seat, from a
-    machine-in-the-middle, and not clearable by reconnecting.  "Lowest free port
-    wins" handed a stopped workspace's port to whoever started next, which is
-    exactly how two users end up trading fingerprints.
+    host key has changed: from the user's seat that is indistinguishable from a
+    machine-in-the-middle, and reconnecting does not clear it.  "Lowest free
+    port wins" would hand a stopped workspace's port to whoever started next,
+    and two users would end up trading fingerprints.
     """
     from services import container_manager as cm
 
@@ -1756,8 +1754,8 @@ def test_a_workspace_is_mounted_at_a_home_shaped_path(client):
 
     conda writes its absolute prefix into .bashrc, into every wrapper script's
     shebang and into conda-meta; pip does the same for ``--user`` installs.
-    Mounting somebody's real home somewhere else left all of them pointing at
-    a path that no longer existed.
+    Mounting somebody's real home somewhere else would leave all of them
+    pointing at a path that does not exist.
     """
     from services import workspaces
 
@@ -2056,9 +2054,9 @@ def test_a_batch_jobs_processes_are_attributed_too(monkeypatch):
 def test_gpu_usage_asks_only_containers_with_a_card_and_is_kept(monkeypatch):
     """Every job list and queue request reads who is on which card.
 
-    That reading used to ``docker exec`` into every platform container, with
-    or without a GPU, on every request, so a dashboard poll cost a quarter of a
-    second with a dozen workspaces open and more with each one added.
+    It must not ``docker exec`` into every platform container on every
+    request: with a dozen workspaces open that costs a dashboard poll a
+    quarter of a second, and more with each one added.
     """
     from services import container_manager, gpu_monitor
 
@@ -2178,7 +2176,7 @@ def _new_account(client, username, password, email=None):
 
 
 def test_a_user_edits_their_own_name_and_email(client):
-    """Correcting your own name used to need an administrator."""
+    """Correcting your own name does not need an administrator."""
     _, token = _new_account(client, "selfedit", "Selfedit-pass1")
 
     res = client.put(
@@ -2243,7 +2241,7 @@ def test_the_profile_form_cannot_grant_privileges(client):
 
 
 def test_changing_your_password_does_not_end_the_session_doing_it(client):
-    """The old behaviour threw the user out of the dashboard mid-run.
+    """Changing a password must not throw the user out of the dashboard.
 
     Every token minted before the change still dies, and that is what makes a
     stolen session expire, but the browser that just proved it knows both
@@ -2474,9 +2472,9 @@ def _job_user(client, username):
 def test_a_job_that_names_no_vram_is_a_cpu_job(client):
     """No flags at all is the CPU case, not a GPU job with a guessed figure.
 
-    The platform used to fill in 4096 MB, so the commonest way to get a
-    reservation wrong was to say nothing, and the scheduler would then fit a
-    neighbour into space that was never free.
+    With a default figure filled in, saying nothing would be the commonest way
+    to get a reservation wrong, and the scheduler would fit a neighbour into
+    space that was never free.
     """
     _, token = _job_user(client, "cpujob")
 
@@ -2718,12 +2716,12 @@ def test_a_job_submitted_now_is_enforced_by_default(client):
 
 
 def test_stopping_a_job_is_actually_written_down(client, monkeypatch):
-    """Regression: the scheduler committed only when some job had *finished*.
+    """The scheduler commits a stop even when no job has *finished*.
 
-    A job stopped for overrunning its VRAM was not on that list, so its
-    container was really gone while the status change was rolled back, and
-    the next pass reported it as having "stopped unexpectedly", losing the one
-    message that said what to fix.
+    A job stopped for overrunning its VRAM is not on that list.  Without the
+    commit its container is really gone while the status change is rolled
+    back, and the next pass reports it as having "stopped unexpectedly",
+    losing the one message that said what to fix.
     """
     from services import container_manager, jobs as job_service
 
@@ -3130,8 +3128,8 @@ def test_the_jobs_listing_is_scoped_to_the_caller(client):
 
 
 def test_a_warning_clears_when_the_job_comes_back_under(client, monkeypatch):
-    """Regression: the check returned early once usage was fine again, so the
-    note written while it was over stayed on the job for the rest of the run.
+    """The note written while a job was over is cleared once usage is fine
+    again, rather than staying on the job for the rest of the run.
 
     A warning nobody can make go away is one people learn to ignore.
     """
@@ -3200,7 +3198,7 @@ def test_clearing_a_warning_leaves_other_notes_alone(client, monkeypatch):
 
 
 def test_the_wording_an_earlier_version_wrote_is_cleared_too(client, monkeypatch):
-    """Jobs running across the deployment carry the old phrasing."""
+    """Jobs running across a deployment carry the earlier phrasing ("MB")."""
     from services import jobs as job_service
 
     user_id, _ = _job_user(client, "oldwording")
@@ -3577,7 +3575,7 @@ def test_a_cpu_job_is_paused_rather_than_restarted(client, monkeypatch):
         assert frozen == [job_id] and killed == []
         assert "paused" in (job.message or "").lower()
         # The clock stops: the two hours it ran are booked and its own runtime
-        # keeps them, but `started_at` no longer runs away while it waits.
+        # keeps them, but `started_at` does not run on while it waits.
         assert job.started_at is None
         assert round(job.runtime_seconds / 3600.0) == 2
         booked = (
@@ -3591,7 +3589,7 @@ def test_a_cpu_job_is_paused_rather_than_restarted(client, monkeypatch):
         db.close()
 
     # Once the budget refills the scheduler thaws it, and the new stretch
-    # starts its clock again without losing the old one.
+    # starts its clock again without losing the hours already booked.
     monkeypatch.setattr(quota_service, "hours_used",
                         lambda db, user, now=None: {"gpu_hours": 0.0, "cpu_hours": 0.0})
     resumed = job_service._resume_paused(SessionLocal())
@@ -4068,7 +4066,7 @@ def test_a_job_closed_by_two_threads_is_booked_once(client):
 
 
 def test_placement_holds_back_the_grace_a_job_may_still_grow_into(client):
-    """A job inside its allowance is deliberately not stopped, so that margin
+    """A job inside its allowance is not stopped, so that margin
     is not free space.  Promising it to a second job puts the second one in
     the space the first may legally take, and the second is the one that dies.
 
@@ -4789,8 +4787,9 @@ def test_memory_held_outside_the_queue_adds_to_the_allowances(client, monkeypatc
 
 def test_a_command_lost_with_a_restarted_agent_fails_at_once(client):
     """The agent stops while its long poll is parked on the master.  That
-    poll takes the next command and hands it to a dead connection; the caller
-    used to wait the whole command timeout, and with it the scheduler pass."""
+    poll takes the next command and hands it to a dead connection.  The caller
+    must fail at once rather than wait the whole command timeout, and hold up
+    the scheduler pass with it."""
     import threading
     import time
     from services import nodes as node_service

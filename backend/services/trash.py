@@ -1,13 +1,12 @@
 """Deleting a user, reversibly.
 
-Deletion used to be immediate and partial: the row vanished, and with it the
-usage and job history that the statistics are built from, while the files, the
-containers and any running job stayed behind.  A workspace directory left that
-way is unreachable because it belongs to a container uid, so the administrator cannot
-even remove it, and the freed username hands those files to whoever registers
-it next.
+Dropping the row alone would lose the usage and job history the statistics
+are built from and leave the files, the containers and any running job
+behind.  A workspace directory left that way belongs to a container uid, so
+the administrator cannot even remove it, and the freed username hands those
+files to whoever registers it next.
 
-So a delete now moves the account to a trash:
+So a delete moves the account to a trash:
 
 * **Everything stops.**  The workspace container, every job (queued or running)
   and every container the user owns are stopped and removed, open usage records
@@ -22,8 +21,7 @@ So a delete now moves the account to a trash:
   name if it is still there; if it is not, the user simply starts with a fresh
   workspace.
 
-Only emptying the trash is destructive, and only an administrator doing it
-deliberately can reach that.
+Only emptying the trash is destructive, and only an administrator can do it.
 """
 
 import json

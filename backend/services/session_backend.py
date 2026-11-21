@@ -4,21 +4,19 @@ This module is the seam the routers talk to, so nothing outside it has to know
 how a workspace is actually started, probed or stopped.  Everything here
 delegates to :mod:`services.container_manager`.
 
-There used to be a second backend behind a ``SESSION_BACKEND`` switch, which
-ran ``jupyter lab`` as a subprocess inside the platform's own container and
-isolated users with an OS account, ``setrlimit`` and GPU device ACLs.  It was
-removed rather than repaired, because it could not do the one job a session
-backend has, which is keeping users apart:
+There is no subprocess backend that runs ``jupyter lab`` inside the
+platform's own container and isolates users with an OS account,
+``setrlimit`` and GPU device ACLs.  Such a backend cannot keep users apart:
 
-* Every workspace shared one filesystem.  ``JUPYTER_DATA_DIR/<user>`` is
-  created 0755, so each user could read every other user's notebooks and data,
+* Every workspace shares one filesystem.  ``JUPYTER_DATA_DIR/<user>`` is
+  created 0755, so each user can read every other user's notebooks and data,
   their Jupyter log, and the ``.jupyter`` config holding the argon2 hash of
   their account password.
-* Every workspace shared one PID and one network namespace, so ``ps`` showed
-  other users' command lines and every other user's Jupyter was one TCP
+* Every workspace shares one PID and one network namespace, so ``ps`` shows
+  other users' command lines and every other user's Jupyter is one TCP
   connection away.
-* The memory "limit" was ``RLIMIT_AS``, an address-space approximation applied
-  per process, not ``memory.max`` applied to the workspace.  There was no disk
+* The memory "limit" is ``RLIMIT_AS``, an address-space approximation applied
+  per process, not ``memory.max`` applied to the workspace.  There is no disk
   quota, no ``cpu.max``, no SSH, and no image choice.
 
 Closing those holes means giving each user their own mount, PID and network
@@ -307,10 +305,9 @@ def self_heal(sessions: list) -> list:
 def reconcile(sessions: list) -> list:
     """Re-attach the DB to reality after a backend restart.
 
-    The backend used to stop every user session on shutdown, so a platform
-    update destroyed everyone's running notebooks.  Sessions now survive; this
-    pass runs at startup and simply corrects rows whose container did not
-    survive (host reboot, manual docker rm).
+    User sessions survive a backend restart, so a platform update does not
+    touch running notebooks.  This pass runs at startup and corrects rows whose
+    container did not survive (host reboot, manual docker rm).
 
     Returns a list of ``{"user": ..., "action": ...}`` corrections.
     """

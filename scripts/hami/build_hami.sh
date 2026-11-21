@@ -10,11 +10,12 @@
 #
 #   bash scripts/hami/build_hami.sh            # -> data/hami/libvgpu.so
 #
-# Pinned to one commit so a rebuild gives the same library.
+# Pinned to one commit so a rebuild gives the same library.  deploy.sh rebuilds
+# when this pin differs from the commit of the build in data/hami.
 set -euo pipefail
 
 HAMI_REPO="${HAMI_REPO:-https://github.com/Project-HAMi/HAMi-core.git}"
-HAMI_COMMIT="${HAMI_COMMIT:-6736b0589049390ec945bd40dfb4769f9f043def}"
+HAMI_COMMIT="${HAMI_COMMIT:-3ab81ce758aeba5f9d1f310134a6777c3fc70997}"
 CUDA_IMAGE="${CUDA_IMAGE:-nvidia/cuda:12.8.1-devel-ubuntu22.04}"
 
 cd "$(dirname "$0")/../.."
@@ -30,23 +31,29 @@ git -C "$SRC" checkout -q "$HAMI_COMMIT"
 DRIVER="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)"
 mkdir -p "$OUT"
 
-# HAMi-core's own build.sh, unchanged.  It builds the Debug configuration,
-# and that is not a detail: its Release configuration adds
+# HAMi-core's own build.sh, with its options unchanged.  It builds the Debug
+# configuration, and that is not a detail: its Release configuration adds
 # -fvisibility=hidden, which hides every CUDA hook, and the library then
 # loads, reads its limit and enforces nothing.  (A Release build made here
 # first did exactly that; the check below and scripts/hami/verify.py exist
-# because of it.)
+# because of it.)  Only the library target is made: some of its tests are
+# written for CUDA 13 headers and do not compile against 12.8.
 docker run --rm -v "$PWD/$SRC:/src:ro" -v "$PWD/$OUT:/out" "$CUDA_IMAGE" bash -euc '
     apt-get update -qq && apt-get install -y -qq cmake >/dev/null
     cp -r /src /build && cd /build
+    grep -qx "make -j\$J" build.sh || { echo "build.sh changed upstream" >&2; exit 1; }
+    sed -i "s/^make -j\$J\$/make -j\$J vgpu/" build.sh
     ./build.sh >/dev/null
     cp build/libvgpu.so /out/libvgpu.so
     chown '"$(id -u):$(id -g)"' /out/libvgpu.so
 '
 
-# The hooks must be exported, or nothing is intercepted.
+# The hooks must be exported, or nothing is intercepted.  (Not "nm | grep -q":
+# grep stops at the first match, nm dies of SIGPIPE, and pipefail reports a
+# symbol that is there as missing.)
+SYMS="$(nm -D --defined-only "$OUT/libvgpu.so")"
 for sym in cuMemAlloc_v2 cuMemGetInfo_v2 cuGetProcAddress_v2 nvmlDeviceGetMemoryInfo; do
-    if ! nm -D --defined-only "$OUT/libvgpu.so" | grep -q " T $sym\$"; then
+    if ! grep -q " T $sym\$" <<<"$SYMS"; then
         echo "ERROR: $OUT/libvgpu.so does not export $sym; it would enforce nothing." >&2
         rm -f "$OUT/libvgpu.so" "$OUT/verified.json"
         exit 1

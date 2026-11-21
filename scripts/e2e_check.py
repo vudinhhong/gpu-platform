@@ -171,8 +171,8 @@ check("UNIX credential derived from the account password (sha512-crypt)",
 check("the account password itself is never stored", PW not in _aj + _ux)
 
 print("\n=== 6a2. One directory for SSH and JupyterLab ===")
-# A file created in the container's HOME must be listed by JupyterLab: the two
-# used to be different trees, so anything made over SSH landed in a hidden
+# A file created in the container's HOME must be listed by JupyterLab: if the
+# two were different trees, anything made over SSH would land in a hidden
 # folder the notebook browser does not display.
 import docker as _dk
 _cli = _dk.from_env()
@@ -256,8 +256,8 @@ check("the usual command-line tools are present", _out == "", "missing: " + _out
 _rc, _host = _sh("hostname")
 check("the prompt does not name infrastructure", _host == "workspace", _host)
 
-# Regression: the friendly `df` must never reach a script.  Rewriting `df -Pk`
-# into human units made the Miniconda installer do arithmetic on "195.1G".
+# The friendly `df` must never reach a script.  Rewriting `df -Pk` into human
+# units makes the Miniconda installer do arithmetic on "195.1G".
 _rc, _script_df = _sh(f"df -Pk {WS} | tail -1 | awk '{{print $4}}'")
 check("df -Pk returns a plain number scripts can compute with",
       _script_df.isdigit(), repr(_script_df))
@@ -296,9 +296,9 @@ check("df shows /dev/shm, so running out of it is diagnosable",
       _shmdf.strip() == "1", _shmdf)
 
 print("\n=== 6b. Static assets through the proxy ===")
-# Regression: nginx matches regex locations BEFORE prefix ones, so a
-# static-asset cache block (~* \.(js|css|...)$) silently swallowed every
-# JupyterLab asset, and the page loaded and stayed blank.
+# nginx matches regex locations BEFORE prefix ones, so a static-asset cache
+# block (~* \.(js|css|...)$) can silently swallow every JupyterLab asset and
+# leave the page blank.
 st, lab_html, _ = req("GET", f"/jupyter/{USER}/lab", token=UTOK)
 asset_refs = re.findall(r'(?:href|src)="([^"]+\.(?:js|css|ico))(?:\?[^"]*)?"', str(lab_html))
 check("JupyterLab page references static assets", bool(asset_refs), str(asset_refs[:2]))
@@ -581,7 +581,7 @@ if final:
 if final:
     _pb = f"{_ws_root}/jobs/output.{job_id}.out"
     _frame = "\r  45%|####      | 45/100 [02:13<02:43, 3371.29it/s, loss=0.0421]"
-    # Deliberately small enough to fit the display window, so the whole file
+    # Small enough to fit the display window, so the whole file
     # is visible and the collapse can be checked against all of it.
     with open(_pb, "w") as _fh:
         _fh.write("\x1b[32mEpoch 1/3\x1b[0m\n")

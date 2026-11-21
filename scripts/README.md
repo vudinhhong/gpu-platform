@@ -10,7 +10,7 @@
 
 It runs from inside the backend container so it exercises the real network path
 (host web server → frontend → backend → user container) and can talk to the
-Docker API to inspect what was actually created.
+Docker API to inspect what was created.
 
 ```bash
 docker cp scripts/e2e_check.py workspace-gpu-backend-1:/tmp/e2e.py
@@ -19,7 +19,7 @@ docker exec -e ADMIN_PASSWORD="$(grep '^ADMIN_PASSWORD=' .env | cut -d= -f2-)" \
 ```
 
 It creates and deletes a temporary `e2euser` account, and briefly starts a real
-GPU container for it — safe on a live system, but it does consume a GPU slot for
+GPU container for it. This is safe on a live system, but it uses a GPU slot for
 a few seconds.
 
 ## Host firewall
@@ -34,7 +34,7 @@ sudo bash scripts/host_firewall_setup.sh --check    # report
 sudo bash scripts/host_firewall_setup.sh            # add + persist the rule
 ```
 
-The script adds exactly one rule — `OUTPUT -o gpu-platform0 -j ACCEPT`. It does
+The script adds exactly one rule: `OUTPUT -o gpu-platform0 -j ACCEPT`. It does
 **not** open INPUT from the bridge, so user containers still cannot initiate
 connections to services running on the host; replies to host-initiated
 connections are already covered by the usual `RELATED,ESTABLISHED` rule.

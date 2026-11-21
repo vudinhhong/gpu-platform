@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 _ACTIVE = (models.JobStatus.queued, models.JobStatus.starting,
            models.JobStatus.running, models.JobStatus.paused)
-#: On the machine and holding hardware.  A paused job is deliberately not here:
+#: On the machine and holding hardware.  A paused job is not here:
 #: its processes are frozen, so it occupies no GPU and no cores, and it is
 #: charged for none of the time it spends this way.
 _ON_GPU = (models.JobStatus.starting, models.JobStatus.running)
@@ -229,11 +229,9 @@ def submit(
     #
     # The memory figure is the switch, not a detail of it: a job that names no
     # VRAM is a CPU job, and a job that names some is a GPU job.  There is no
-    # default any more.  The platform used to supply one, which meant the most
-    # common way to get a reservation wrong was to say nothing at all, the
-    # scheduler would fit a neighbour into 4 GB that was never really free,
-    # and the neighbour was the one that died of it.  A number nobody chose is
-    # worse than no number, because it looks like a decision.
+    # default: with one, saying nothing would be the easiest way to get a
+    # reservation wrong, and the scheduler would fit a neighbour into memory
+    # that was never really free.  A number nobody chose looks like a decision.
     memory = _as_int(gpu_memory_mb, "--gpu-memory", default=0)
     if memory < 0:
         raise HTTPException(
@@ -426,12 +424,11 @@ def gpu_availability(db, node=None) -> List[Dict[str, Any]]:
     stops the scheduler from admitting two jobs into the same free space.
 
     The second number is the *allowance*, not the request.  A job holding its
-    request plus a little is inside its allowance and is deliberately not
-    stopped, so that margin is space the scheduler must not promise to anyone
-    else: a job that has not allocated yet may legally grow into it later, and
-    the job admitted beside it on the strength of the smaller figure is the one
-    that would die of it.  It costs a sparser card -- up to the grace per job
-    is held back -- which is the price of the grace being real.
+    request plus a little is inside its allowance and is not stopped, so that
+    margin is space the scheduler must not promise to anyone else: a job that
+    has not allocated yet may legally grow into it later, and the job admitted
+    beside it on the strength of the smaller figure is the one that would die
+    of it.  The cost is a sparser card, with up to the grace per job held back.
 
     `reserved_mb` in the payload stays the sum of the requests, because that is
     the figure users chose and recognise; only placement uses the allowance.
@@ -557,9 +554,9 @@ def cpu_capacity(db, node=None) -> Dict[str, Any]:
     yet, and without holding its allocation the scheduler would admit another
     into the same idle reading, and another, until the machine was swamped.
 
-    A job is still capped at its owner's allocation once it runs, that has not
-    changed.  What changed is only who may start: an idle ceiling no longer
-    reserves a core against everybody else.
+    A job is still capped at its owner's allocation once it runs.  This only
+    decides who may start: an idle ceiling does not reserve a core against
+    everybody else.
 
     With no fresh measurement, just after a restart, or when docker stats is
     unavailable it falls back to adding the ceilings up, erring towards
@@ -742,10 +739,10 @@ def _place(job: "models.Job", availability: List[Dict[str, Any]]) -> Optional[Li
 def gpu_guard_pass() -> Dict[str, Any]:
     """Sample VRAM and stop anything past its allowance.
 
-    Split out of the scheduler pass and run far more often.  Sampling on the
-    scheduler's ten-second cycle meant the reservation was checked ten seconds
-    after a job could have blown through it, and placement -- which is what the
-    scheduler pass is for -- gains nothing from running that often.  One
+    Runs separately from the scheduler pass and far more often.  On the
+    scheduler's ten-second cycle a job could be ten seconds past its
+    reservation before anyone looked, while placement, which is what the
+    scheduler pass is for, gains nothing from running that often.  One
     nvidia-smi covers every job here, so the cost does not grow with the queue.
     """
     if not settings.JOBS_ENABLED:
@@ -946,10 +943,8 @@ def gpu_overrun_allowance_mb(requested_mb: int) -> int:
 
 
 # Enough of the VRAM note to recognise one this module wrote, including notes
-# already in the database from earlier versions ("is using N MB of GPU memory
-# after reserving").  It starts at "B" rather than "MiB" on purpose: the unit
-# has been written MB and is now written MiB, and a job stopped before that
-# change still carries the old wording and must still be recognised.
+# written by earlier releases ("is using N MB of GPU memory after reserving").
+# It starts at "B" so that it matches both "MB" (older notes) and "MiB".
 # `message` is shared with the output-size check and with the final word on a
 # job that ended, so a note may only be cleared by whoever wrote it.
 _VRAM_NOTE_MARKER = "B of GPU memory after"
@@ -958,11 +953,10 @@ _VRAM_NOTE_MARKER = "B of GPU memory after"
 def _check_gpu_overrun(db, job: "models.Job") -> Optional[str]:
     """Stop a job holding more VRAM than it reserved.
 
-    The reservation is what the scheduler used to decide another job would fit
-    beside this one.  Left unenforced it is an honour system with a reward for
-    lying: asking for 4 GB and taking 30 gets you to the front of the queue,
-    and the job admitted into the space you claimed not to need is the one
-    that dies of it.  So the figure is held to.
+    The reservation is what the scheduler relied on when it decided another
+    job would fit beside this one.  Left unenforced it rewards lying: asking
+    for 4 GB and taking 30 gets you to the front of the queue, and the job
+    admitted into the space you claimed not to need is the one that dies of it.
 
     What is measured is memory *held*, which is the right measure even though
     part of it may be a framework's free-list rather than live tensors: a
@@ -1142,10 +1136,9 @@ def _elapsed_seconds(job: "models.Job", now: Optional[datetime] = None) -> int:
     ``runtime_seconds`` carries the stretches already booked by ``_book_segment``;
     what has to be added to it is the live stretch, the one that began at
     ``started_at`` and has not been booked yet.  A finished job has no live
-    stretch: ``_close`` books the last one and deliberately leaves ``started_at``
-    alone, since it is the record of when the job last started.  Adding it again
-    once the job had ended therefore counted the final stretch twice and reported
-    exactly double the runtime for every completed job.
+    stretch: ``_close`` books the last one and leaves ``started_at`` alone,
+    since it is the record of when the job last started.  Adding it again once
+    the job has ended would count the final stretch twice.
     """
     total = float(job.runtime_seconds or 0.0)
     if job.started_at and job.finished_at is None:

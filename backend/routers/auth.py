@@ -66,9 +66,9 @@ def _cookie_secure(request: Request) -> bool:
 def _set_proxy_cookie(response: Response, request: Request, token: str) -> None:
     """Hand the browser a JWT it can present when navigating to /jupyter/*.
 
-    Plain navigation cannot add an Authorization header, which is why the
-    proxy used to wave through every password-mode request.  An HttpOnly
-    cookie scoped to /jupyter closes that hole without a token in the URL.
+    Plain navigation cannot add an Authorization header.  An HttpOnly cookie
+    scoped to /jupyter lets the proxy authenticate those requests without a
+    token in the URL.
     """
     response.set_cookie(
         key=PROXY_COOKIE,

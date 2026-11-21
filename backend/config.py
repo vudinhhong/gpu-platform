@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     # ── Security ─────────────────────────────────────────────────────────
     # Override in production via environment variable or .env file.
     SECRET_KEY: str = "change-this-in-production-use-a-random-32-char-string"
-    # Session lifetime.  Revocation no longer depends on expiry: every JWT
+    # Session lifetime.  Revocation does not depend on expiry: every JWT
     # carries the user's token_version, so deactivating a user, resetting
     # their password or forcing a logout invalidates outstanding tokens at
     # once (see auth.get_current_user).
@@ -159,8 +159,8 @@ class Settings(BaseSettings):
     # GPU-hours a user's jobs may spend, counted as wall-clock x cards held.
     DEFAULT_GPU_HOURS_QUOTA: float = 0.0
     # CPU core-hours their jobs may spend, as wall-clock x cores allocated.
-    # This is the CPU budget with teeth; DEFAULT_CPU_LIMIT_SECONDS above is an
-    # RLIMIT_CPU ceiling per process tree that nothing applies any more.
+    # This is the CPU budget that is enforced; DEFAULT_CPU_LIMIT_SECONDS above
+    # is an RLIMIT_CPU ceiling per process tree that nothing applies.
     DEFAULT_CPU_HOURS_QUOTA: float = 0.0
     # What to do about a RUNNING JOB whose owner has just run out.  Admission
     # cannot cover this on its own: a job admitted with twenty minutes of
@@ -226,7 +226,7 @@ class Settings(BaseSettings):
     # VRAM left unclaimed on a GPU after admitting a job, so a card is never
     # filled to the last megabyte by the scheduler.
     JOB_GPU_HEADROOM_MB: int = 512
-    # There is deliberately no default VRAM request.  A job that names no
+    # There is no default VRAM request.  A job that names no
     # figure is a CPU job; a job that wants a GPU has to say how much of one.
     # A guessed reservation is worse than none: it reads as a decision, and
     # the scheduler fits other work against it.
@@ -334,16 +334,16 @@ class Settings(BaseSettings):
     # someone forgot to release.
     IDLE_TIMEOUT_MINUTES: int = 0
     REAPER_INTERVAL_SECONDS: int = 300
-    # Keep user sessions alive across a backend restart.  The old behaviour
-    # (stop everything on shutdown) meant every platform update killed every
-    # running notebook.
+    # Keep user sessions alive across a backend restart.  When off, every
+    # session is stopped on shutdown, so a platform update kills every running
+    # notebook.
     KEEP_SESSIONS_ON_SHUTDOWN: bool = True
 
     # ── One password per user ────────────────────────────────────────────
     # Derive the Jupyter login and the container's UNIX password from the
     # platform account password, so a user configures nothing and never sees a
-    # second or third secret.  Turning this off restores the old behaviour:
-    # per-session random SSH passwords and token links for Jupyter.
+    # second or third secret.  When off, each session gets a random SSH
+    # password and Jupyter is reached through a token link.
     UNIFIED_PASSWORD: bool = True
     # Accept password authentication over SSH at all.  Set false for a
     # key-only deployment: the SSH port range is reachable from the internet

@@ -296,8 +296,8 @@ else
 
     # Drop knobs from superseded deployment approaches.  SESSION_BACKEND chose
     # between one container per user and a `jupyter lab` subprocess sharing the
-    # platform's own namespaces; the subprocess backend is gone, so the setting
-    # has nothing left to select.  JUPYTER_PORT_* was that backend's host port
+    # platform's own namespaces.  Only containers exist, so the setting has
+    # nothing left to select.  JUPYTER_PORT_* was that backend's host port
     # pool: a container's Jupyter is reached over the Docker network by name.
     if grep -qE '^SESSION_BACKEND=process' .env; then
         echo "  ⚠  SESSION_BACKEND=process is no longer a thing.  That backend ran"
@@ -436,12 +436,11 @@ fi
 
 echo ""
 # `--pull` refuses to carry a stale base layer forward, and the image is only
-# promoted to :latest after it has been shown to run.  Both halves were learned
-# the hard way: a cached `python3.11` that died with SIGILL produced an image
-# that built without complaint and whose every workspace then crash-looped, and
-# because nothing here ever ran the thing it had just built, `:latest` was
-# rewritten to point at it.  Read back what was applied, do not trust that it
-# worked -- the same rule the platform applies to cgroup limits.
+# promoted to :latest after it has been shown to run.  A cached base layer can
+# carry a broken binary (a `python3.11` that dies with SIGILL, say), and the
+# image still builds without complaint while every workspace started from it
+# crash-loops.  Read back what was applied rather than trusting that it worked,
+# the same rule the platform applies to cgroup limits.
 echo "Building per-user Jupyter image (gpu-jupyter:latest)..."
 if docker build --pull -f backend/jupyter.Dockerfile -t gpu-jupyter:candidate backend/; then
     if docker run --rm --entrypoint sh gpu-jupyter:candidate \
@@ -465,10 +464,11 @@ fi
 
 # ── Hard GPU memory limit (HAMi-core), only when asked for ──────────────────
 # GPU_HARD_VRAM_LIMIT=true in .env is the whole of what an administrator does.
-# The library is built for this host's driver when there is none or the driver
-# has changed, then verified on a GPU here (scripts/hami/verify.py); the
-# backend applies limits only with a build verified for the running driver,
-# and otherwise keeps stopping jobs after the fact, as without the option.
+# The library is built for this host's driver when there is none, or the driver
+# or the pinned HAMi-core commit has changed, then verified on a GPU here
+# (scripts/hami/verify.py); the backend applies limits only with a build
+# verified for the running driver, and otherwise keeps stopping jobs after the
+# fact, as without the option.
 
 HARD_VRAM="$(grep -E '^GPU_HARD_VRAM_LIMIT=' .env 2>/dev/null | tail -1 | cut -d= -f2- || true)"
 if [ "$HOST_GPU" = "true" ] && [ "$HARD_VRAM" = "true" ]; then
@@ -477,8 +477,11 @@ if [ "$HOST_GPU" = "true" ] && [ "$HARD_VRAM" = "true" ]; then
     set_env_var HAMI_HOST_DIR "$(pwd)/data/hami"
     DRIVER_NOW="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)"
     DRIVER_BUILT="$(grep -o '"driver": "[^"]*"' data/hami/build-info.json 2>/dev/null | cut -d'"' -f4 || true)"
-    if [ ! -f data/hami/libvgpu.so ] || [ "$DRIVER_BUILT" != "$DRIVER_NOW" ]; then
-        echo "  building HAMi-core for driver $DRIVER_NOW (first time or driver changed)..."
+    COMMIT_PINNED="$(grep -o 'HAMI_COMMIT:-[0-9a-f]*' scripts/hami/build_hami.sh | cut -d- -f2)"
+    COMMIT_BUILT="$(grep -o '"hami_commit": "[^"]*"' data/hami/build-info.json 2>/dev/null | cut -d'"' -f4 || true)"
+    if [ ! -f data/hami/libvgpu.so ] || [ "$DRIVER_BUILT" != "$DRIVER_NOW" ] \
+            || [ "$COMMIT_BUILT" != "$COMMIT_PINNED" ]; then
+        echo "  building HAMi-core ${COMMIT_PINNED:0:12} for driver $DRIVER_NOW (first time, or driver or pin changed)..."
         REMOVE_BUILD_IMAGE=1 bash scripts/hami/build_hami.sh \
             || echo "  ⚠  build failed; jobs keep the after-the-fact check only."
     fi
@@ -531,10 +534,8 @@ fi
 for pattern in "env-*.bak" "db-*.db" "compose-*.yml"; do
     # A pattern that matches nothing is the normal case on a first deployment:
     # there is no database to snapshot yet.  `ls` then exits non-zero, and with
-    # `set -o pipefail` that aborted the whole run right here -- silently,
-    # because stderr is discarded, and before a single container was started.
-    # The snapshot lines were the last thing printed, which is exactly what it
-    # looked like: deploy.sh reporting success and then stopping.
+    # `set -o pipefail` that would abort the whole run here, silently (stderr
+    # is discarded) and before a single container is started.
     # shellcheck disable=SC2086
     ls -1t $SNAP_DIR/$pattern 2>/dev/null | tail -n +21 | while read -r old; do
         rm -f "$old"

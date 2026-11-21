@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e1_vram as e1  # noqa: E402  (first: points the API client at the dev stack)
 import platform_api as api  # noqa: E402
 
-PASSWORD = "Experiment-pass-1"
+PASSWORD = api.experiment_password()
 SUBMITTER = "expn1"     # workspace on the master, no GPU; submits the jobs
 REMOTE = "expn2"        # workspace on emu1
 LOCAL = "expn3"         # workspace on the master, the baseline

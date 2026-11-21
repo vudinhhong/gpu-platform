@@ -37,8 +37,8 @@ PLATFORM_DIR = "/platform"
 # directory, because that is what everything installed into one assumes: conda
 # writes its absolute prefix into ``.bashrc``, into every wrapper script's
 # shebang and into its own ``conda-meta``, and pip does the same for
-# ``--user`` installs.  Mounting a real home at ``/workspace`` left all of
-# those pointing at paths that no longer existed.
+# ``--user`` installs.  Mounting a real home at ``/workspace`` would leave all
+# of those pointing at paths that do not exist.
 CONTAINER_HOME_ROOT = "/home"
 
 # Fallback uid when a directory's owner cannot be read.
@@ -93,7 +93,7 @@ class Workspace:
 def validate_home_path(path: str) -> str:
     """Check an administrator-supplied mapping, or raise HTTP 400.
 
-    Deliberately strict about *where*: a mapping must sit under
+    Strict about *where*: a mapping must sit under
     ``HOME_MOUNT_ROOT``, so a mistyped path cannot mount ``/`` or ``/etc`` into
     somebody's shell.
     """

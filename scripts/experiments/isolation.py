@@ -23,7 +23,7 @@ runs inside A's own container, so it is held to A's limits: nothing here can
 exhaust the host.  Output is JSON (raw trials) plus a summary table.
 
     ADMIN_PASSWORD=... python3 scripts/experiments/isolation.py --reps 5 \
-        --out paper/data/isolation.json
+        --out scripts/experiments/results/isolation.json
 """
 
 import argparse
@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import platform_api as api  # noqa: E402
 
 A, B = "expa", "expb"
-PASSWORD = "Experiment-pass-1"
+PASSWORD = api.experiment_password()
 LIMITS = {"gpu_indices": [], "memory_limit_mb": 4096, "cpu_cores": 4, "max_processes": 256}
 ATTACK_SECONDS = 40
 

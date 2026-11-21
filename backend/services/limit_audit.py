@@ -4,22 +4,19 @@ The platform already reads a container's limits back from the daemon instead of
 trusting the values it sent.  That catches a daemon which quietly drops a
 setting, but not a daemon which accepts one and does not end up applying it:
 `docker inspect` reports what Docker *recorded*, and the cgroup is a separate
-thing that can be reset underneath it.  One workspace on the reference host ran
-for nine days with `MemorySwap` equal to `Memory` in its HostConfig -- swap
-disabled, as far as Docker was concerned -- and `memory.swap.max` at `max` in
-the cgroup, which is swap very much enabled.  Nothing noticed, because nothing
-was looking at the third column.
+thing that can be reset underneath it.  A container can have `MemorySwap`
+equal to `Memory` in its HostConfig (swap disabled, as far as Docker knows)
+while `memory.swap.max` in its cgroup is `max`, which is swap enabled.
 
-This is that third column.  The backend cannot read another container's cgroup:
-it has a cgroup namespace of its own and sees only itself, so each container is
-asked about its own limits instead, which it can always read at the root of its
-`/sys/fs/cgroup`.
+This module reads the cgroup itself.  The backend cannot read another
+container's cgroup: it has a cgroup namespace of its own and sees only itself,
+so each container is asked about its own limits instead, which it can always
+read at the root of its `/sys/fs/cgroup`.
 
 Divergence is reported, not repaired.  Re-applying a cgroup value under a
 running container would leave Docker's record and the kernel disagreeing in the
-other direction, and the honest fix is the one an administrator can already
-do -- stop the workspace and start it again, which removes the container and
-builds a new one.
+other direction.  The fix is one an administrator can already make: stop the
+workspace and start it again, which removes the container and builds a new one.
 """
 
 import logging
@@ -46,10 +43,9 @@ _READ = (
     "done; "
     "echo '@@gpu.nodes'; ls /dev/nvidia* 2>/dev/null; "
     # The exit code has to mean "the script ran", not "the last command found
-    # something".  Without this, `ls` exiting 2 on a workspace with no GPU made
-    # the whole reading look like a failure, and every GPU-less workspace was
-    # skipped without a word -- the same confusion of absence with error that
-    # this module exists to keep out of the findings.
+    # something".  Without this, `ls` exiting 2 on a workspace with no GPU
+    # would make the whole reading look like a failure and the workspace would
+    # be skipped without a word, confusing absence with error.
     "exit 0"
 )
 

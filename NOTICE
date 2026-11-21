@@ -14,6 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 This product bundles no third-party source code.  It depends at run time on
-independently licensed components installed by the package managers — among
+independently licensed components installed by the package managers (among
 them FastAPI, SQLAlchemy, uvicorn, the Docker SDK for Python, React and
-JupyterLab — each of which remains under its own license.
+JupyterLab), each of which remains under its own license.

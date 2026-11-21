@@ -190,8 +190,8 @@ def _encrypt_legacy_secrets() -> None:
 def _fix_jupyter_password_hashes() -> None:
     """Add the ``argon2:`` prefix to Jupyter password hashes stored without it.
 
-    Hashes written before this fix made Jupyter reject the correct password:
-    without the prefix its passwd_check() falls through to the legacy
+    Without the prefix Jupyter rejects the correct password: its
+    passwd_check() falls through to the legacy
     "algorithm:salt:digest" branch and always returns False.
     """
     from auth import normalize_jupyter_hash
@@ -220,10 +220,10 @@ def _fix_jupyter_password_hashes() -> None:
 def _rescue_cpu_core_values() -> None:
     """Re-read old ``cpu_limit_seconds`` values as the core counts they meant.
 
-    Until now the assignment form's only CPU field was "CPU limit (seconds)",
-    and the container backend turned it into cores with ``seconds / 3600``
-    clamped to a 0.25 floor.  An admin typing 4 for "four cores" got a
-    container throttled to a quarter of a core.
+    In earlier releases the assignment form's only CPU field was "CPU limit
+    (seconds)", and the container backend turned it into cores with
+    ``seconds / 3600`` clamped to a 0.25 floor, so a 4 typed as "four cores"
+    is stored here as four seconds.
 
     A value no larger than the host's core count cannot plausibly be a
     CPU-seconds budget (four seconds of CPU would end a session instantly), so

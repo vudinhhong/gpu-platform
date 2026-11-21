@@ -32,8 +32,8 @@ def _payload_for(user: models.User) -> Dict[str, Any]:
     """One frame of the live feed, scoped to what this user may see.
 
     Regular users get their own GPUs and their own container's CPU/RAM;
-    admins get the whole host.  Previously the WebSocket pushed every GPU,
-    including other users' process lists, to anyone logged in.
+    admins get the whole host.  Other users' GPUs and process lists are never
+    sent to a regular user.
     """
     snapshot = metrics.latest()
     if user.is_admin:

@@ -67,8 +67,8 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: the things this user acts on, then the cards they only
-              read.  My GPUs used to sit top-centre, which is the most
-              valuable space on the page, and nothing on it is clickable. */}
+              read.  The My GPUs card is here and not top-centre, the most
+              valuable space on the page, because nothing on it is clickable. */}
           <div className="lg:col-span-1 space-y-6">
             <JupyterCard />
             <ResourcePanel />

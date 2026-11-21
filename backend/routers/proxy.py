@@ -195,10 +195,8 @@ def _authorized(
 def _upstream_auth_headers(session: SessionView, method: str, headers: dict) -> dict:
     """Give the upstream Jupyter a credential it actually understands.
 
-    The platform's JWT means nothing to Jupyter, so a caller authenticated by
-    the platform alone used to get 403 from Jupyter for every API call and
-    "_xsrf argument missing" for every POST, the dashboard link worked only
-    because it carried ?token= in the URL.
+    The platform's JWT means nothing to Jupyter: forwarded as is, every API
+    call gets 403 and every POST gets "_xsrf argument missing".
 
     * Token-mode session → inject ``Authorization: token <jupyter token>``.
       Header auth also exempts the request from Jupyter's XSRF check, which is

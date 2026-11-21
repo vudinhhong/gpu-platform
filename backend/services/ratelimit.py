@@ -6,8 +6,7 @@ invitation.
 
 Scope: one backend process (the platform runs a single uvicorn worker by
 design, see backend/Dockerfile).  With multiple workers or replicas this
-should move to Redis; the interface below is deliberately small enough to
-swap.
+should move to Redis; the interface below is small enough to swap.
 """
 
 import threading

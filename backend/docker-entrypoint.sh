@@ -100,11 +100,10 @@ done
 # The platform's own directory is always ours to arrange.
 [ -d /platform ] && chown "$RUN_UID:$RUN_GID" /platform 2>/dev/null || true
 
-# Workspaces used to be mounted at /workspace for everyone, and anything
-# installed while that was true wrote the path into itself: a conda prefix
-# appears in .bashrc, in every wrapper script's shebang and in conda-meta.
-# Moving the mount without this would break exactly what moving it was meant
-# to fix.  The symlink keeps the old path resolving to the same files.
+# Older workspaces were mounted at /workspace, and anything installed there
+# wrote that path into itself: a conda prefix appears in .bashrc, in every
+# wrapper script's shebang and in conda-meta.  The symlink keeps /workspace
+# resolving to the same files so those installs keep working.
 # rmdir only succeeds on an empty directory, so a real /workspace is never
 # touched.
 if [ "$USER_HOME" != "/workspace" ]; then

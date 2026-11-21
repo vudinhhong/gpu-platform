@@ -13,7 +13,7 @@ it did with them.  This sampler fills the gap from the host, once a minute:
 
     python3 scripts/experiments/workspace_gpu_sampler.py sample --out ~/gpu_samples.jsonl
     python3 scripts/experiments/workspace_gpu_sampler.py summary ~/gpu_samples.jsonl \\
-        > paper/data/workspace_gpu_use.json
+        > scripts/experiments/results/workspace_gpu_use.json
 
 The raw log names users; ``summary`` replaces them with user1, user2, ... (in
 order of appearance in the log, not the numbering of the deployment trace) and

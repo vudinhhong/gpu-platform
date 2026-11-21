@@ -8,8 +8,11 @@ user gets.
 
     export PLATFORM_URL=http://127.0.0.1:8000        # the backend port
     export ADMIN_PASSWORD=...                        # from .env
+    export EXP_PASSWORD=...         # optional; see experiment_password()
 """
 
+import hashlib
+import hmac
 import json
 import os
 import subprocess
@@ -88,13 +91,7 @@ def login(username, password):
     return body["access_token"]
 
 
-def admin_token():
-    # Under the experiment runner the target is always the second (dev)
-    # installation.  Reaching the production port from there means the
-    # caller imported this module before the dev defaults were set.
-    if os.environ.get("EXP_ID") and not EXEC_CONTAINER and URL.endswith(":8000"):
-        raise SystemExit("experiment is pointed at the production backend; "
-                         "import e1_vram before platform_api")
+def _admin_password():
     password = os.environ.get("ADMIN_PASSWORD")
     if not password:
         path = os.path.expanduser(os.environ.get("ADMIN_PASSWORD_FILE", "~/.gpu_admin_pw"))
@@ -103,7 +100,28 @@ def admin_token():
                 password = fh.read().strip()
     if not password:
         raise SystemExit("set ADMIN_PASSWORD, or put it in ~/.gpu_admin_pw")
-    return login("admin", password)
+    return password
+
+
+def experiment_password():
+    """Password of the experiment accounts: EXP_PASSWORD if set, otherwise
+    derived from the admin password of the installation, so that it is the
+    same in every run and not written in the scripts."""
+    password = os.environ.get("EXP_PASSWORD")
+    if password:
+        return password
+    digest = hmac.new(_admin_password().encode(), b"experiment accounts", hashlib.sha256)
+    return "Exp-" + digest.hexdigest()[:24] + "-1"
+
+
+def admin_token():
+    # Under the experiment runner the target is always the second (dev)
+    # installation.  Reaching the production port from there means the
+    # caller imported this module before the dev defaults were set.
+    if os.environ.get("EXP_ID") and not EXEC_CONTAINER and URL.endswith(":8000"):
+        raise SystemExit("experiment is pointed at the production backend; "
+                         "import e1_vram before platform_api")
+    return login("admin", _admin_password())
 
 
 def ensure_user(admin, username, password, **assignment):

@@ -124,7 +124,7 @@ def cpu_hours_quota(user: "models.User") -> float:
 # ---------------------------------------------------------------------------
 
 #: Ledger rows written by the job runner.  Interactive sessions write
-#: "container" or "process" and are deliberately not counted; see the module
+#: "container" or "process" and are not counted; see the module
 #: docstring.
 JOB_BACKEND = "job"
 

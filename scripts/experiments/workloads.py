@@ -13,7 +13,7 @@ Each job's status, placement, runtime and the last lines of its output are
 recorded.  The account is deactivated afterwards; its files stay until an
 administrator purges it.
 
-    python3 scripts/experiments/workloads.py --out paper/data/workloads.json
+    python3 scripts/experiments/workloads.py --out scripts/experiments/results/workloads.json
 """
 
 import argparse
@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import platform_api as api  # noqa: E402
 
 USER = "expw"
-PASSWORD = "Experiment-pass-1"
+PASSWORD = api.experiment_password()
 
 SETUP = r'''
 set -e

@@ -42,14 +42,13 @@ def historical_usage(db, now: datetime = None) -> Dict[int, float]:
     the machine *lately*.
 
     A stretch is counted for the part of it that lies **inside** the window, so
-    selecting rows by ``ended_at`` and clipping at ``since`` is the whole point:
-    selecting by ``started_at`` instead dropped any stretch older than the
-    window outright, and a job that ran longer than ``FAIRSHARE_WINDOW_HOURS``
-    left its owner looking idle -- the longer it ran, the further forward in the
-    queue they went, which is the opposite of sharing.  Work still on the machine
-    has nothing booked on it yet, so it is charged at the rates it holds: an open
-    row for a workspace, and the job table for a batch job, which has no row of
-    its own until it finishes.
+    rows are selected by ``ended_at`` and clipped at ``since``.  Selecting by
+    ``started_at`` would drop any stretch older than the window outright, and a
+    job that ran longer than ``FAIRSHARE_WINDOW_HOURS`` would leave its owner
+    looking idle: the longer it ran, the further forward in the queue they
+    would go.  Work still on the machine has nothing booked on it yet, so it is
+    charged at the rates it holds: an open row for a workspace, and the job
+    table for a batch job, which has no row of its own until it finishes.
     """
     now = now or datetime.utcnow()
     since = now - timedelta(hours=settings.FAIRSHARE_WINDOW_HOURS)
@@ -92,7 +91,7 @@ def historical_usage(db, now: datetime = None) -> Dict[int, float]:
     # ``jobs._book_segment`` writes one row per finished stretch.  Only an
     # interactive workspace has a row open while it runs, so without this pass a
     # job still holding a card would count for nothing here however long it had
-    # held it -- and the whole stretch would arrive at once, after the fact.
+    # held it, and the whole stretch would arrive at once, after the fact.
     # Charge the live stretch from the job itself, clipped to the window exactly
     # as an open record is.  There is no double count: while the job runs no row
     # exists, and the row and the status change land in the same transaction.

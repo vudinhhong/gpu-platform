@@ -868,5 +868,19 @@
     9
    ]
   }
- }
+ },
+ "e4-diag": {"path": "runs/e4-diag/20261117T210002/e4_diag.jsonl", "measured": "2026-11-17", "rows": [
+   {"delay_ms": 0, "phase": "after_start", "http_median_ms": {"interleaved_node": 3.1, "interleaved_master": 2.2, "master_only": 2.1, "node_only": 3.1}, "master_p95_ms": {"interleaved": 3.6, "master_only": 2.4}, "health_median_ms": 0.7, "health_p95_ms": 1.8},
+   {"delay_ms": 0, "phase": "settled", "http_median_ms": {"interleaved_node": 4.2, "interleaved_master": 3.1, "master_only": 2.1, "node_only": 3.3}, "master_p95_ms": {"interleaved": 3.7, "master_only": 3.3}, "health_median_ms": 0.9, "health_p95_ms": 2.4},
+   {"delay_ms": 50, "phase": "after_start", "http_median_ms": {"interleaved_node": 55.3, "interleaved_master": 3.8, "master_only": 2.1, "node_only": 54.5}, "master_p95_ms": {"interleaved": 4.4, "master_only": 3.2}, "health_median_ms": 0.7, "health_p95_ms": 1.3},
+   {"delay_ms": 50, "phase": "settled", "http_median_ms": {"interleaved_node": 55.2, "interleaved_master": 3.7, "master_only": 2.2, "node_only": 54.7}, "master_p95_ms": {"interleaved": 4.4, "master_only": 3.5}, "health_median_ms": 0.7, "health_p95_ms": 1.2},
+   {"delay_ms": 20, "phase": "after_start", "http_median_ms": {"interleaved_node": 24.0, "interleaved_master": 2.8, "master_only": 2.2, "node_only": 24.6}, "master_p95_ms": {"interleaved": 4.1, "master_only": 3.3}, "health_median_ms": 0.7, "health_p95_ms": 1.5},
+   {"delay_ms": 20, "phase": "settled", "http_median_ms": {"interleaved_node": 24.4, "interleaved_master": 3.3, "master_only": 2.2, "node_only": 24.5}, "master_p95_ms": {"interleaved": 4.1, "master_only": 3.4}, "health_median_ms": 0.7, "health_p95_ms": 1.4},
+   {"delay_ms": 50, "phase": "after_start", "http_median_ms": {"interleaved_node": 55.5, "interleaved_master": 4.1, "master_only": 2.3, "node_only": 55.3}, "master_p95_ms": {"interleaved": 4.6, "master_only": 3.5}, "health_median_ms": 0.8, "health_p95_ms": 1.3},
+   {"delay_ms": 50, "phase": "settled", "http_median_ms": {"interleaved_node": 54.9, "interleaved_master": 3.5, "master_only": 2.1, "node_only": 54.9}, "master_p95_ms": {"interleaved": 4.5, "master_only": 3.4}, "health_median_ms": 0.7, "health_p95_ms": 1.2},
+   {"delay_ms": 0, "phase": "after_start", "http_median_ms": {"interleaved_node": 3.5, "interleaved_master": 2.6, "master_only": 2.2, "node_only": 3.2}, "master_p95_ms": {"interleaved": 3.6, "master_only": 3.3}, "health_median_ms": 0.8, "health_p95_ms": 2.2},
+   {"delay_ms": 0, "phase": "settled", "http_median_ms": {"interleaved_node": 3.3, "interleaved_master": 2.3, "master_only": 2.0, "node_only": 3.4}, "master_p95_ms": {"interleaved": 3.5, "master_only": 3.3}, "health_median_ms": 0.8, "health_p95_ms": 2.3},
+   {"delay_ms": 50, "phase": "after_start", "http_median_ms": {"interleaved_node": 55.1, "interleaved_master": 3.7, "master_only": 2.4, "node_only": 55.6}, "master_p95_ms": {"interleaved": 4.6, "master_only": 3.4}, "health_median_ms": 0.8, "health_p95_ms": 1.5},
+   {"delay_ms": 50, "phase": "settled", "http_median_ms": {"interleaved_node": 54.0, "interleaved_master": 2.9, "master_only": 2.1, "node_only": 54.6}, "master_p95_ms": {"interleaved": 4.2, "master_only": 2.4}, "health_median_ms": 0.6, "health_p95_ms": 1.1}
+ ]}
 }

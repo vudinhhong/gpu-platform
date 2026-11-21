@@ -81,7 +81,7 @@ class PasswordReset(BaseModel):
 class ProfileUpdate(BaseModel):
     """What a user may change about themselves.
 
-    Deliberately narrower than :class:`UserUpdate`: a user edits their own
+    Narrower than :class:`UserUpdate`: a user edits their own
     name and email, never their quotas, their admin flag or their workspace
     path.  Every field is optional, the form sends only what it touched.
     """
@@ -134,8 +134,7 @@ class GpuAssignmentCreate(BaseModel):
     """What an administrator may set for one user.
 
     Every limit is optional, including the GPUs: capping someone's CPU and RAM
-    without giving them a GPU at all is an ordinary thing to want, and the
-    form used to make it impossible by requiring a GPU to be picked.  What is
+    without giving them a GPU at all is an ordinary thing to want.  What is
     NOT allowed is an assignment that sets nothing, which would be a row with
     no meaning.
     """
@@ -144,8 +143,8 @@ class GpuAssignmentCreate(BaseModel):
     gpu_indices:       List[int]       = []     # e.g. [0, 1]; empty = no GPU
     memory_limit_mb:   Optional[int]   = None
     cpu_cores:         Optional[float] = None   # cgroup cpu.max
-    # RLIMIT_CPU; unused since the process backend was removed, and the admin
-    # form no longer offers it.  Kept so old assignments still deserialize.
+    # RLIMIT_CPU; unused, and the admin form does not offer it.  Kept so old
+    # assignments still deserialize.
     cpu_limit_seconds: Optional[int]   = None
     max_processes:     Optional[int]   = None   # cgroup pids.max
     # Per card, enforced only with GPU_HARD_VRAM_LIMIT; None = whole card.

@@ -171,8 +171,8 @@ async def update_user(
         # takes one back when the account can no longer use it.  Leaving it
         # assigned here would hold a port nobody can reach.
             user.jupyter_session.ssh_port = None
-        # Deactivation used to leave the user working for up to a full token
-        # lifetime; revoking cuts them off on their next request.
+        # Revoking cuts a deactivated user off on their next request instead
+        # of letting them work until their token expires.
         revoke_tokens(user)
         changes.append(f"is_active={payload.is_active}")
     if payload.disk_quota_mb is not None:
@@ -326,7 +326,7 @@ def purge_directory(
 ):
     """Delete one workspace directory that no account owns.
 
-    For directories left behind by the older delete, which removed the account
+    For directories left behind by releases whose delete removed the account
     row and left the files unreachable under the original username.
     """
     from services import trash
@@ -454,8 +454,8 @@ def _validate_gpu_indices(indices: List[int], node=None) -> None:
                 "GPU-less development box)."
             ),
         )
-    # Every index is checked, not just the largest, assigning [0, 7] on a
-    # 2-GPU host used to succeed because only max() was validated.
+    # Every index is checked, not just the largest: on a 2-GPU host, [0, 7]
+    # has a valid max() but names a card that does not exist.
     unknown = sorted(set(indices) - known)
     if unknown:
         raise HTTPException(
@@ -740,12 +740,12 @@ def stop_user_session(
 
     session.pid = None
     session.container_id = None
-    # ssh_port is deliberately kept.  It is the port this workspace asks for
-    # next time, and an SSH client keys known_hosts by host *and* port: handing
-    # somebody a different port on the next start makes their client report that
-    # the host key changed, which reads as an attack and not as a restart.
-    # Nothing mistakes a remembered port for a live one -- every reader checks
-    # the session status first.
+    # ssh_port is kept.  It is the port this workspace asks for next time, and
+    # an SSH client keys known_hosts by host *and* port: handing somebody a
+    # different port on the next start makes their client report that the
+    # host key changed, which reads as an attack and not as a restart.
+    # Nothing mistakes a remembered port for a live one, because every reader
+    # checks the session status first.
     session.ssh_password = None
     session.status = models.SessionStatus.stopped
     db.add(session)
@@ -782,11 +782,9 @@ def platform_resources(db: Session = Depends(get_db)):
     per_user = []
     for user in users:
         live = metrics.for_user(user.username)
-        # One measurement, not two.  This row used to read disk usage from the
-        # cached scan of JUPYTER_DATA_DIR while the quota beside it was
-        # measured at the workspace's real location, so a user mapped to a
-        # home directory showed "0 MB" in red against a quota they were
-        # genuinely over.
+        # Disk usage and quota come from the same measurement, taken at the
+        # workspace's real location.  A cached scan of JUPYTER_DATA_DIR would
+        # show "0 MB" for a user mapped to a home directory.
         budget = quota.snapshot(db, user)
         per_user.append({
             "username": user.username,

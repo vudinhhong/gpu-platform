@@ -52,8 +52,8 @@ SSH), so changing it changes them all at once.
 ## 2. Starting your workspace
 
 The dashboard is what you see after signing in. The card at the top left is
-your workspace; it starts out stopped, because a workspace holds memory and
-possibly a GPU, and nobody should be holding those while they are not here.
+your workspace; it starts out stopped, because a running workspace holds
+memory and possibly a GPU.
 
 ![Dashboard](images/user-02-dashboard.png)
 
@@ -62,7 +62,7 @@ your jobs, all on one page.*
 
 Press **Start Jupyter**. The first start takes a little longer than the rest,
 usually ten to thirty seconds, because the container has to be created. When it
-is ready the card turns green and grows two more buttons.
+is ready the card turns green and shows two more buttons.
 
 ![Workspace running](images/user-03-workspace-running.png)
 
@@ -153,7 +153,7 @@ first.
 
 ## 7. Seeing what you actually have
 
-The standard tools lie to you in a container. `nproc`, `free`, `df` and `top`
+In a container the standard tools report the wrong numbers. `nproc`, `free`, `df` and `top`
 read the whole machine, so a workspace capped at 4 cores and 16 GB reports 32
 cores and 62 GB. The platform ships replacements that report your real
 allocation, and the `limits` command prints everything at once:
@@ -177,10 +177,9 @@ Your workspace
 ```
 
 It also prints automatically when you log in over SSH. Use these numbers when
-you size a batch or a data loader. Because the replacements are what you get by
-default, `nproc` answers 4 here rather than 32, so `make -j$(nproc)` does the
-right thing; it is only the full path, `/usr/bin/nproc`, that still reports the
-whole host.
+you size a batch or a data loader. `nproc` answers 4 here rather than 32, so
+`make -j$(nproc)` sizes itself correctly; only the full path,
+`/usr/bin/nproc`, reports the whole host.
 
 ---
 
@@ -201,8 +200,7 @@ see or touch anybody else's, and they cannot reach yours.
 
 If you have no assignment, `device_count()` returns 0 and that is expected. It
 does not mean you cannot use a GPU: it means you use one through the queue,
-which is what the next section is about. Plenty of people work that way by
-choice, because a card you hold all day is a card nobody else can have.
+which is what the next section is about.
 
 ---
 
@@ -226,7 +224,7 @@ Then, from a terminal in your workspace:
 submit train.sh --gpu-memory 20000 --name nightly
 ```
 
-Four commands is the whole interface:
+There are four commands:
 
 | Command | What it does |
 |---|---|
@@ -263,7 +261,7 @@ job to the back.
 
 ## 10. Choosing `--gpu-memory`
 
-This is the one number worth getting right, so it deserves its own section.
+This is the one number you have to get right.
 
 `--gpu-memory` is how much VRAM your job needs, in megabytes, per GPU. It
 decides two things: which card your job is placed on, and how much room the
@@ -271,12 +269,12 @@ scheduler thinks is left over for everybody else.
 
 * **State a figure and you get a GPU.** The job waits for a card with that much
   free, and starts when one has it.
-* **State nothing and it runs on CPU.** That is not a penalty. A preprocessing
+* **State nothing and it runs on CPU.** A preprocessing
   job that does not touch CUDA starts as soon as cores are free, usually at
   once.
 
-Since the scheduler fits other people's work into the space you did not ask
-for, the figure has to be honest, and the platform holds you to it. A job that goes well past
+The scheduler fits other people's work into the space you did not ask for, so
+the platform holds you to the figure. A job that goes well past
 its request is stopped and told what it really used, so it can be resubmitted
 with a true number. There is some tolerance built in, roughly ten per cent plus
 a gigabyte, because a CUDA context costs a few hundred megabytes before your
@@ -288,11 +286,11 @@ more per process, nor several processes on one card (DataLoader workers that
 touch CUDA, or one process per GPU rank on the same GPU): count each of them
 in your request, or leave the default loading alone.
 
-Asking for far more than you need is not punished, but it is not free either:
-it makes your job wait for a card that is emptier than it has to be, and it
-keeps that space away from everybody else while you run.
+Asking for far more than you need makes your job wait for a card that is
+emptier than it has to be, and keeps that space away from everybody else while
+you run.
 
-The practical way to find your number: run the job once, watch
+To find your number: run the job once, watch
 `nvidia-smi` or `torch.cuda.max_memory_allocated()`, round up to the next
 gigabyte or so, and use that from then on.
 
@@ -300,7 +298,7 @@ gigabyte or so, and use that from then on.
 
 ## 11. Your budgets
 
-Three numbers on the resource card, and only one of them can stop you working.
+The resource card shows three budgets.
 
 ![Resource card](images/user-05-resource-card.png)
 
@@ -312,9 +310,9 @@ does not cost you your workspace, because deleting files is something you can
 only do from inside it. What it costs is the GPU and the queue: the workspace
 still starts, without a card, and `submit` refuses until you are back under.
 
-**Job GPU hours** and **job CPU hours**, per week. These cover jobs and nothing
-else. Time you spend in your own workspace is not counted, however long you
-leave it open, so there is no meter running while you read your results.
+**Job GPU hours** and **job CPU hours**, per week. These cover only jobs. Time
+you spend in your own workspace is not counted, however long you leave it
+open.
 
 A job is charged for what it holds rather than what it uses: an hour on two
 GPUs is two GPU hours, and an hour of a four-core job is four CPU hours,
@@ -329,9 +327,8 @@ running is dealt with according to what it holds:
   not charged to you.
 * **A job with a GPU goes back into the queue** and starts again by itself once
   the budget refills. It is not lost and you do not have to resubmit it, but it
-  does restart from the beginning and rewrite its output file. A card cannot be
-  frozen and handed to somebody else at the same time, which is why this one
-  cannot simply pause.
+  does restart from the beginning and rewrite its output file. It is not paused
+  because a paused job would keep its card.
 
 That second case is the reason to checkpoint anything long:
 
@@ -360,11 +357,10 @@ torch.save({"epoch": epoch, "model": model.state_dict()}, "ckpt.pt")
 
 ## 13. Being a good neighbour
 
-None of this is enforced by the software, and all of it is noticed by the
-people you share the machine with.
+None of this is enforced by the software.
 
 * Stop your workspace when you finish for the day. A card held by a forgotten
-  notebook is the single most common way this machine goes to waste.
+  notebook is the most common way GPU time is wasted.
 * Put long runs in the queue rather than in a notebook. They survive your
   laptop closing, they are recorded, and they let the scheduler interleave
   other people's work with yours.
@@ -377,7 +373,7 @@ people you share the machine with.
 
 Anything the platform decides about you is visible to you: your limits in
 `limits`, your usage on the dashboard, and the reason for every refusal in the
-message itself. If one of them is wrong or unclear, that is worth reporting.
+message itself. If one of them is wrong or unclear, tell the administrator.
 
 For how the platform is administered, see the
 [administrator guide](admin-guide.md). For how it works underneath, see the

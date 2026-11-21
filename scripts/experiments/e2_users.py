@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e1_vram as e1  # noqa: E402  (sets the dev stack defaults)
 import platform_api as api  # noqa: E402
 
-PASSWORD = "Experiment-pass-1"
+PASSWORD = api.experiment_password()
 MASTER = "gpu-platform-dev-backend-1"
 
 _CLIENT = r'''

@@ -251,9 +251,9 @@ async def lifespan(_app: FastAPI):
         task.cancel()
     await proxy.close_client()
 
-    # User sessions deliberately SURVIVE a backend restart.  Stopping them here
-    # meant every platform update or container restart killed everyone's
-    # running notebooks; the startup reconcile above re-attaches instead.
+    # User sessions SURVIVE a backend restart by default.  Stopping them here
+    # would kill everyone's running notebooks on every platform update or
+    # container restart; the startup reconcile above re-attaches instead.
     if not settings.KEEP_SESSIONS_ON_SHUTDOWN:
         from services import session_backend, usage
 
@@ -275,7 +275,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="GPU Platform API",
     description="Multi-user GPU/CPU/RAM resource management with isolated JupyterLab sessions.",
-    version="1.3.0",
+    version="1.3.1",
     lifespan=lifespan,
 )
 

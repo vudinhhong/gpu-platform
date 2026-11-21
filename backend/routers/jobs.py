@@ -141,9 +141,9 @@ def list_jobs(
     query = job_service.sort_jobs(query, sort, order)
     if per_page:
         pages = max(1, -(-total // per_page))
-        # A page that no longer exists, the last job on it was cancelled and
-        # swept up, say, returns the last real one rather than nothing, so
-        # the table never goes blank under a poll.
+        # A page past the end (say the last job on it was cancelled and swept
+        # up) returns the last real one rather than nothing, so the table
+        # never goes blank under a poll.
         page = min(page, pages)
         rows = query.offset((page - 1) * per_page).limit(per_page).all()
         pagination = {
@@ -192,7 +192,7 @@ def shared_queue(
     """
     return {
         # Who is asking, so the client can pick their own rows out of a list
-        # that deliberately belongs to everybody.  Guessing it from a shell
+        # that belongs to everybody.  Guessing it from a shell
         # variable would be wrong in exactly the containers that rename it.
         "you": user.username,
         "queue": job_service.queue_view(db),

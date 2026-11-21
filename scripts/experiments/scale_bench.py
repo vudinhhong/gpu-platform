@@ -16,7 +16,7 @@ Run inside the backend image so the dependencies are there:
 
     docker run --rm -v "$PWD/backend:/src:ro" -v "$PWD/scripts/experiments:/exp:ro" \\
         --entrypoint sh workspace-gpu-backend -c \\
-        'cp -r /src /b && cd /b && python /exp/scale_bench.py' > paper/data/scale.json
+        'cp -r /src /b && cd /b && python /exp/scale_bench.py' > scripts/experiments/results/scale.json
 """
 
 import json

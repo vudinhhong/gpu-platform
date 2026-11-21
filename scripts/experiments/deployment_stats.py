@@ -7,7 +7,7 @@ to a moment someone looked at a dashboard.
 
     python3 scripts/experiments/deployment_stats.py data/gpu_platform.db \\
         --until 2026-10-21 --exclude-users admin,demouser,expa,expb,expc,expw \\
-        --anonymise > paper/data/deployment.json
+        --anonymise > scripts/experiments/results/deployment.json
 """
 
 import argparse

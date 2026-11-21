@@ -36,8 +36,8 @@ def get_password_hash(password: str) -> str:
 def validate_password(password: str) -> None:
     """Raise HTTP 400 unless *password* meets the platform policy.
 
-    Deliberately modest but no longer trivial: the old six-character floor on
-    an unthrottled login endpoint was brute-forceable in minutes.
+    Modest on purpose, but long enough that the login endpoint cannot be
+    brute-forced in minutes.
     """
     problems = []
     if len(password or "") < settings.MIN_PASSWORD_LENGTH:
@@ -55,8 +55,8 @@ def validate_password(password: str) -> None:
 
 # Jupyter tags its argon2 hashes with this prefix and dispatches on it.
 # jupyter_server.auth.security.passwd_check() treats anything WITHOUT it as a
-# legacy "algorithm:salt:digest" string, fails to split it, and returns False,
-# so a correct password was rejected as invalid.  The prefix is not decoration.
+# legacy "algorithm:salt:digest" string, fails to split it, and returns False
+# even for the correct password.
 JUPYTER_ARGON2_PREFIX = "argon2:"
 
 
@@ -130,9 +130,8 @@ def create_access_token(
     """Encode a signed access token for *user*.
 
     The token embeds ``ver`` (the user's ``token_version``).  Bumping that
-    column revokes every token already issued, the platform previously had no
-    way at all to log a compromised or deactivated account out before the
-    token expired on its own.
+    column revokes every token already issued, which is how a compromised or
+    deactivated account is logged out before its tokens expire.
     """
     expire = datetime.utcnow() + (
         expires_delta
@@ -149,7 +148,7 @@ def create_access_token(
 
 
 def revoke_tokens(user: "models.User") -> None:
-    """Invalidate every JWT previously issued to *user*."""
+    """Invalidate every JWT issued to *user* so far."""
     user.token_version = int(user.token_version or 0) + 1
 
 

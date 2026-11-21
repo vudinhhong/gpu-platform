@@ -6,7 +6,7 @@ the API in one process, so its cgroup's CPU time over an interval is an upper
 bound on what the guard and the scheduler cost together.  Also times one
 host-wide nvidia-smi query, which is what each guard tick runs.
 
-    python3 scripts/experiments/backend_overhead.py --seconds 600 > paper/data/backend_overhead.json
+    python3 scripts/experiments/backend_overhead.py --seconds 600 > scripts/experiments/results/backend_overhead.json
 """
 import argparse, json, statistics, subprocess, time
 from datetime import datetime

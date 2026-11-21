@@ -19,8 +19,8 @@ def _workspace():
     """Where this workspace is mounted.
 
     The platform publishes the path; ``HOME`` is the same directory for anyone
-    running these commands, and the old fixed path is the last resort for a
-    container created before workspaces moved to their home path.
+    running these commands, and ``/workspace`` is the last resort for a
+    container created before workspaces were mounted at their home path.
     """
     for value in (os.environ.get("PLATFORM_HOME"), os.environ.get("HOME")):
         if value and os.path.isdir(value):

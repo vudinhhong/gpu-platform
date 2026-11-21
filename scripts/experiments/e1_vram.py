@@ -45,7 +45,7 @@ PREFIX = "gpu-dev-"
 # One account submits both jobs: the limit is per job, and a second account
 # would only need its own 4.5 GB PyTorch install.
 USERS = {"neighbour": "exp01", "offender": "exp01"}
-PASSWORD = "Experiment-pass-1"
+PASSWORD = api.experiment_password()
 HOME_DATA = ROOT / "jupyter_data"
 MODES = {
     "monitor": {"GPU_HARD_VRAM_LIMIT": "false", "JOB_GPU_OVERRUN_ACTION": "stop"},

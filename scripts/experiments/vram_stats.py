@@ -7,7 +7,7 @@ their last sample (gpu_memory_used_mb), and are flagged as such.  Per GPU, in
 MiB.
 
     python3 scripts/experiments/vram_stats.py data/gpu_platform.db --until 2026-10-21 \\
-        --exclude-users demouser,admin > paper/data/vram_jobs.json
+        --exclude-users demouser,admin > scripts/experiments/results/vram_jobs.json
 """
 import argparse, json, sqlite3, statistics
 from datetime import datetime

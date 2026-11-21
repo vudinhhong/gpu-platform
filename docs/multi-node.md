@@ -55,7 +55,7 @@ can join.
 * A node silent for `NODE_STALE_SECONDS` (60 s) is **unreachable**: nothing
   new is placed on it, and its running jobs are left alone, not failed, until
   it comes back or an administrator removes it.  On return its heartbeat lists
-  the containers it really has, and the master reconciles against that.
+  the containers it has, and the master reconciles against that.
 
 ## Data
 
@@ -86,7 +86,7 @@ A workspace runs where its GPUs are.  An assignment names a machine (**Admin
 → Assignments → Machine**) and GPU indices as that machine numbers them; the
 user's Start then goes to that node, and status, stop and the proxy follow the
 session row.  A user with no assignment, or one without a machine, runs on the
-master as before.
+master.
 
 If the node stops calling in, its workspaces are left as they are: the proxy
 answers 502 and the status stays "running" until the node is back or an
@@ -103,7 +103,7 @@ administrator's action (copy the home, change the site).
 
 ## Scheduling across nodes
 
-Fair share is computed once, over the whole installation, exactly as before.
+Fair share is computed once, over the whole installation.
 For the job at the head of the order the scheduler considers every ready node
 of the user's site and takes the densest fit: the node and cards with the
 least free memory that still fit, which keeps whole cards and whole nodes free

@@ -11,7 +11,7 @@ Run in a CUDA container on one GPU (it allocates well under 1 GiB):
 
     docker run --rm --gpus device=0 -v "$PWD/scripts/experiments:/exp:ro" \\
         pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime \\
-        python /exp/cuda_context.py --reps 10 > paper/data/cuda_context.json
+        python /exp/cuda_context.py --reps 10 > scripts/experiments/results/cuda_context.json
 """
 
 import argparse

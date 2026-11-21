@@ -490,9 +490,9 @@ function SortTh({ children, field, sort, onSort, className = '' }) {
  * What a job is holding on the card, or held at its highest once it is over.
  *
  * While it runs the live figure is the useful one: it is what the reservation
- * is being judged against right now.  Afterwards it is close to meaningless --
- * the last reading usually catches a job that has already released everything,
- * so it reads zero -- and the peak is what answers whether the reservation was
+ * is being judged against right now.  Afterwards it is close to meaningless
+ * (the last reading usually catches a job that has already released everything,
+ * so it reads zero), and the peak is what answers whether the reservation was
  * anywhere near the truth.
  */
 function VramCell({ job, live }) {
@@ -890,8 +890,8 @@ export function AuditTab() {
 // Deleting a user does not remove anything: the account is kept so its name
 // stays reserved and its history stays attached to it, and the workspace is
 // renamed aside.  This is where both are dealt with: restored, or finally
-// removed.  The second table is for directories left behind by the older
-// delete, which removed the account row and left the files behind under the
+// removed.  The second table is for directories left behind by earlier
+// releases, whose delete removed the account row and left the files under the
 // original name, invisible and owned by nobody.
 // ---------------------------------------------------------------------------
 

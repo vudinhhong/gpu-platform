@@ -86,8 +86,8 @@ class User(Base):
     # CPU core-hour budget for the same period; 0/None = unlimited.  Charged
     # as wall-clock x cores allocated, to workspaces and jobs alike.  This is
     # the CPU budget the platform enforces; GpuAssignment.
-    # cpu_limit_seconds below is an RLIMIT_CPU ceiling the old process backend
-    # applies to one process tree, which is a different thing entirely.
+    # cpu_limit_seconds below is an RLIMIT_CPU ceiling for one process tree,
+    # which is a different thing and is not applied.
     cpu_hours_quota = Column(Float, nullable=True)
     # The site whose nodes may run this user's work (docs/multi-node.md): a
     # home lives on one site's NFS server.  NULL = settings.NODE_SITE.
@@ -176,12 +176,10 @@ class GpuAssignment(Base):
     # CPU cores the container may use (cgroup cpu.max).  This is the knob an
     # admin actually wants.  NULL = DEFAULT_CPU_CORES.
     cpu_cores         = Column(Float, nullable=True)
-    # Cumulative CPU-SECONDS ceiling (RLIMIT_CPU) for one process tree.  Dead
-    # since the process backend was removed: cgroups cannot express a
-    # cumulative budget, so nothing reads this and the admin form does not
-    # offer it.  The per-user compute budget that does work is
-    # User.cpu_hours_quota.  It used to be the only CPU field in the UI, so "4"
-    # meaning four cores was translated to 4/3600 → 0.25.
+    # Cumulative CPU-SECONDS ceiling (RLIMIT_CPU) for one process tree.
+    # Unused: cgroups cannot express a cumulative budget, so nothing reads
+    # this and the admin form does not offer it.  The per-user compute budget
+    # is User.cpu_hours_quota.  Kept so existing rows still load.
     cpu_limit_seconds = Column(Integer, nullable=True)
     # Most processes and threads the user may have at once (cgroup pids.max).
     # The fork-bomb ceiling, but also what a build with many parallel jobs or a

@@ -44,8 +44,8 @@ def _resolve_limits(current_user: models.User):
 
     Returns ``(memory_limit_mb, cpu_cores, cpu_limit_seconds, max_processes)``.
     Cores is the cgroup cap (``cpu.max``); CPU-seconds is a per-process
-    RLIMIT_CPU ceiling the admin form no longer offers and nothing applies any
-    more, kept so old assignments still load.  ``max_processes`` is ``pids.max``.
+    RLIMIT_CPU ceiling that the admin form does not offer and nothing applies,
+    kept so old assignments still load.  ``max_processes`` is ``pids.max``.
     """
     assignment = current_user.gpu_assignment
     memory_limit_mb = assignment.memory_limit_mb if assignment else None
@@ -81,7 +81,7 @@ def _session_payload(user: models.User, session: models.JupyterSession) -> Dict[
     payload = JupyterSessionResponse.model_validate(session).model_dump(mode="json")
     payload["token"] = crypto.decrypt(session.token) or ""
     payload["ssh_password"] = crypto.decrypt(session.ssh_password)
-    # Deliberately no engine state or raw startup logs here: this payload is
+    # No engine state or raw startup logs here: this payload is
     # rendered on the user's dashboard, and neither is theirs to reason about.
     # Administrators have the audit log and the server log for that.
     payload["runtime"] = {
@@ -394,10 +394,10 @@ def jupyter_start(
     # row's status itself.
     db.commit()
 
-    # No image, no workspace.  This used to fall back to a second backend that
-    # ran Jupyter as a subprocess beside every other user's, which turned a
-    # missing image into a silent loss of isolation; it is gone.  ./deploy.sh
-    # builds the image, so say what is wrong and let an administrator fix it.
+    # No image, no workspace.  There is no fallback that runs Jupyter outside
+    # a container, since that would trade isolation for availability.
+    # ./deploy.sh builds the image, so say what is wrong and let an
+    # administrator fix it.
     # The admin's assignment says which node the GPUs are on; no assignment,
     # or one without a node, is the master.
     node_id = getattr(current_user.gpu_assignment, "node_id", None)
@@ -545,7 +545,7 @@ def jupyter_start(
     db.add(session)
 
     # Refresh the credential the in-workspace job commands use.  Rotating it
-    # per session means a workspace that is gone cannot queue work any more.
+    # per session means a workspace that is gone cannot queue work.
     if settings.JOBS_ENABLED:
         job_service.ensure_job_token(db, current_user)
 
@@ -590,12 +590,12 @@ def jupyter_stop(
 
     session.pid = None
     session.container_id = None
-    # ssh_port is deliberately kept.  It is the port this workspace asks for
-    # next time, and an SSH client keys known_hosts by host *and* port: handing
-    # somebody a different port on the next start makes their client report that
-    # the host key changed, which reads as an attack and not as a restart.
-    # Nothing mistakes a remembered port for a live one -- every reader checks
-    # the session status first.
+    # ssh_port is kept.  It is the port this workspace asks for next time, and
+    # an SSH client keys known_hosts by host *and* port: handing somebody a
+    # different port on the next start makes their client report that the
+    # host key changed, which reads as an attack and not as a restart.
+    # Nothing mistakes a remembered port for a live one, because every reader
+    # checks the session status first.
     session.ssh_password = None
     session.status = models.SessionStatus.stopped
     session.last_activity = datetime.utcnow()

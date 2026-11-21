@@ -99,8 +99,8 @@ def sanitize_username(username: str) -> str:
     return _NAME_RE.sub("_", username.lower())[:28]
 
 
-# Where a workspace used to be mounted for everyone.  Kept only so a container
-# created before the move keeps working until it is next recreated.
+# Where older containers mount every workspace.  Kept only so such a
+# container keeps working until it is next recreated.
 LEGACY_WORKSPACE_PATH = "/workspace"
 
 
@@ -173,8 +173,8 @@ def ssh_port_candidates(
     A workspace keeps the port it was first given.  An SSH client keys
     ``known_hosts`` by host *and* port, so moving a workspace to another port
     makes every client that has ever connected announce that the host key has
-    changed -- from the user's seat indistinguishable from a
-    machine-in-the-middle, and not clearable by reconnecting.  The host keys are
+    changed.  From the user's seat that is indistinguishable from a
+    machine-in-the-middle, and reconnecting does not clear it.  The host keys are
     already persistent (``docker-entrypoint.sh`` keeps them in a bind mount);
     the port is the other half of that identity.
 
@@ -610,7 +610,7 @@ def _disk_io_limits_kwargs() -> Dict[str, Any]:
 
     # blkio weight is a cgroup v1 control.  On the v2 unified hierarchy the
     # daemon does accept it and runc converts it to io.weight, so nothing here
-    # fails -- but io.weight is only honoured when the device runs BFQ or has
+    # fails, but io.weight is only honoured when the device runs BFQ or has
     # blk-iocost configured, and neither is the default.  Sending it would put
     # a number in `docker inspect` that the kernel then ignores, which is worse
     # than sending nothing.  The BPS ceilings above are what actually bind.
@@ -861,8 +861,8 @@ def start_user_container(
             hami_kwargs(name, int(vram_limit), image=chosen_image).get("volumes", {}))
 
     # The account inside the container is the user's, with the uid that owns
-    # the workspace, whether or not SSH is on.  It used to be set only with
-    # an SSH port, so once the port range was used up a new workspace ran as
+    # the workspace, whether or not SSH is on.  Tying it to an SSH port would
+    # leave a workspace started after the port range ran out running as
     # "jupyter" with uid 1000, whoever owned its files.
     kwargs["environment"].update({
         "SSH_USER_NAME": username,
@@ -925,11 +925,9 @@ def start_user_container(
 
     kwargs.update(_disk_io_limits_kwargs())
 
-    # CPU cap, in cores.  cpu_limit_seconds is deliberately NOT consulted here:
-    # it is a cumulative CPU-time budget (RLIMIT_CPU) that cgroups cannot
-    # express, and the old `seconds / 3600` translation turned an admin's "4"
-    # into 0.25 cores, a container throttled to a quarter of a core while the
-    # UI claimed four.
+    # CPU cap, in cores.  cpu_limit_seconds is NOT consulted here: it is a
+    # cumulative CPU-time budget (RLIMIT_CPU) that cgroups cannot express, and
+    # converting it to cores (seconds / 3600) would turn a "4" into 0.25.
     cpu_cores = float(cpu_cores or settings.DEFAULT_CPU_CORES or 0)
     if cpu_cores > 0:
         kwargs["nano_cpus"] = int(cpu_cores * 1e9)
@@ -1263,12 +1261,12 @@ def ensure_workspace_ownership(username: str, workspace=None) -> None:
 def migrate_split_home(username: str) -> None:
     """Fold ``<user>/.home/*`` up into ``<user>/`` (one-time, idempotent).
 
-    Earlier versions bind-mounted ``<user>/.home`` separately at
-    ``/home/<user>``, which meant SSH and JupyterLab showed different trees:
-    a directory created over SSH landed inside a hidden folder the notebook
-    file browser does not display.  Now there is one directory, so anything a
-    user already had, ``pip install --user`` packages in ``.local``, their
-    ``.ssh``, ``.jupyter`` and shell dotfiles, has to move up one level.
+    Earlier releases bind-mounted ``<user>/.home`` separately at
+    ``/home/<user>``, so SSH and JupyterLab showed different trees: a
+    directory created over SSH landed inside a hidden folder the notebook
+    file browser does not display.  With one directory, anything a user
+    already had (``pip install --user`` packages in ``.local``, their
+    ``.ssh``, ``.jupyter`` and shell dotfiles) has to move up one level.
 
     Entries are moved individually with rename (same filesystem, atomic); an
     entry whose destination already exists is left alone rather than
@@ -1669,10 +1667,9 @@ def install_authorized_keys(username: str, public_key: Optional[str],
     """Write (or remove) the user's authorized_keys so it applies immediately.
 
     sshd re-reads authorized_keys on every authentication attempt, so a key
-    saved here works on the *current* session, no restart.  Previously the key
-    was only passed to the container as an environment variable at creation
-    time, which meant a key added after the session started silently did
-    nothing and the user was stuck on password auth with no indication why.
+    saved here works on the *current* session, no restart.  Passing the key
+    only as an environment variable at creation time would ignore a key added
+    after the session started.
 
     Ownership and modes matter: sshd's StrictModes rejects a key file that is
     group/world-writable or not owned by the authenticating user.
